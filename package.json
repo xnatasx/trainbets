@@ -1,0 +1,10 @@
+{
+  "name": "trainbets",
+  "version": "1.0.0",
+  "description": "Prediction market for Swedish train delays",
+  "private": true,
+  "dependencies": {
+    "@netlify/functions": "^2.8.0",
+    "ethers": "^6.13.0"
+  }
+}
