@@ -559,6 +559,72 @@ if (window.ethereum) {
 setInterval(init, 120_000);
 
 init();
+
+
+// ── Live chain data ──────────────────────────────────────────────────────────
+const CHAIN_CONTRACT = "0xB54bCee43ACad2c99e59Bc89f19823181DA4ceF9";
+const CHAIN_ABI = [
+  "function marketCount() view returns (uint256)",
+  "function markets(uint256) view returns (uint256 id, string trainId, string departureDate, uint256 closingTime, uint8 outcome, uint256 totalYes, uint256 totalNo)",
+];
+const SIG_CITY = { G: "Göteborg", M: "Malmö", Son: "Sundsvall", U: "Uppsala" };
+
+async function loadMarketsFromChain() {
+  try {
+    const provider = new ethers.JsonRpcProvider("https://mainnet.base.org");
+    const contract = new ethers.Contract(CHAIN_CONTRACT, CHAIN_ABI, provider);
+    const count = Number(await contract.marketCount());
+    if (count === 0) return null;
+    const raw = await Promise.all(
+      Array.from({ length: count }, (_, i) => contract.markets(i + 1))
+    );
+    const now = Math.floor(Date.now() / 1000);
+    const live = raw.filter(m => Number(m.outcome) === 0 && Number(m.closingTime) > now);
+    if (live.length === 0) return null;
+    return live.map(m => {
+      const deptSec = Number(m.closingTime) - 1800;
+      const dep = new Date(deptSec * 1000).toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" });
+      const parts = m.trainId.split(" ");
+      const destSig = parts[1] || "G";
+      const to = SIG_CITY[destSig] || destSig;
+      const totalYes = Number(m.totalYes);
+      const totalNo  = Number(m.totalNo);
+      const total    = totalYes + totalNo;
+      const yesProb  = total > 0 ? Math.round(totalYes * 100 / total) : 50;
+      const closingIn = Math.round((Number(m.closingTime) - now) / 60);
+      return {
+        id: Number(m.id),
+        route: { from: "Stockholm", to, line: "X2000", hot: Math.abs(yesProb - 50) > 10 },
+        dep,
+        question: "Kommer Stockholm→" + to + " X2000 avg " + dep + " fram i tid?",
+        shortRoute: "Stockholm→" + to,
+        yesProb,
+        volume: Math.round(total / 1e6),
+        bettors: Math.max(1, Math.round(total / 5e6)),
+        closingIn,
+        hot: Math.abs(yesProb - 50) > 10,
+        highvol: total > 500e6,
+      };
+    });
+  } catch (err) {
+    console.error("[TrainBets] Chain load error:", err.message);
+    return null;
+  }
+}
+
+async function refreshFromChain() {
+  const chainMarkets = await loadMarketsFromChain();
+  if (chainMarkets && chainMarkets.length > 0) {
+    window.markets = chainMarkets;
+    if (typeof renderMarkets === "function") renderMarkets(window.markets);
+    console.log("[TrainBets] Loaded " + chainMarkets.length + " markets from chain");
+  }
+}
+
+// Load on startup then refresh every 60 s
+refreshFromChain();
+setInterval(refreshFromChain, 60000);
+// ── End live chain data ───────────────────────────────────────────────────────
 </script>
 </body>
 </html>
