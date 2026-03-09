@@ -9,7 +9,7 @@ const DEST_SIGNATURES = ["G", "M", "Son", "U"];
 
 const CONTRACT_ABI = [
   "function marketCount() view returns (uint256)",
-  "function markets(uint256) view returns (uint256 id, string trainId, string departureDate, uint256 closingTime, uint8 outcome, uint256 totalYes, uint256 totalNo)",
+  "function markets(uint256) view returns (string trainId, string departureDate, uint256 closingTime, uint8 outcome, uint256 totalYes, uint256 totalNo)",
   "function createMarket(string calldata trainId, string calldata departureDate, uint256 closingTime) external returns (uint256)",
   "function resolveMarket(uint256 marketId, uint8 outcome) external",
 ];
