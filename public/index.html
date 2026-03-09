@@ -575,11 +575,12 @@ async function loadMarketsFromChain() {
     const contract = new ethers.Contract(CHAIN_CONTRACT, CHAIN_ABI, provider);
     const count = Number(await contract.marketCount());
     if (count === 0) return null;
-    const raw = await Promise.all(
+    const settled = await Promise.allSettled(
       Array.from({ length: count }, (_, i) => contract.markets(i + 1))
     );
+    const raw = settled.map((r,i) => r.status==='fulfilled' ? [r.value, i+1] : null).filter(Boolean);
     const now = Math.floor(Date.now() / 1000);
-    const live = raw.map((m,i)=>[m,i+1]).filter(([m]) => Number(m.outcome) === 0 && Number(m.closingTime) > now);
+    const live = raw.filter(([m]) => Number(m.outcome) === 0 && Number(m.closingTime) > now);
     if (live.length === 0) return null;
     return live.map(([m,marketId]) => {
       const deptSec = Number(m.closingTime) - 1800;
