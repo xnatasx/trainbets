@@ -565,7 +565,7 @@ init();
 const CHAIN_CONTRACT = "0xB54bCee43ACad2c99e59Bc89f19823181DA4ceF9";
 const CHAIN_ABI = [
   "function marketCount() view returns (uint256)",
-  "function markets(uint256) view returns (uint256 id, string trainId, string departureDate, uint256 closingTime, uint8 outcome, uint256 totalYes, uint256 totalNo)",
+  "function markets(uint256) view returns (string trainId, string departureDate, uint256 closingTime, uint8 outcome, uint256 totalYes, uint256 totalNo)",
 ];
 const SIG_CITY = { G: "Göteborg", M: "Malmö", Son: "Sundsvall", U: "Uppsala" };
 
@@ -579,9 +579,9 @@ async function loadMarketsFromChain() {
       Array.from({ length: count }, (_, i) => contract.markets(i + 1))
     );
     const now = Math.floor(Date.now() / 1000);
-    const live = raw.filter(m => Number(m.outcome) === 0 && Number(m.closingTime) > now);
+    const live = raw.map((m,i)=>[m,i+1]).filter(([m]) => Number(m.outcome) === 0 && Number(m.closingTime) > now);
     if (live.length === 0) return null;
-    return live.map(m => {
+    return live.map(([m,marketId]) => {
       const deptSec = Number(m.closingTime) - 1800;
       const dep = new Date(deptSec * 1000).toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" });
       const parts = m.trainId.split(" ");
@@ -593,7 +593,7 @@ async function loadMarketsFromChain() {
       const yesProb  = total > 0 ? Math.round(totalYes * 100 / total) : 50;
       const closingIn = Math.round((Number(m.closingTime) - now) / 60);
       return {
-        id: Number(m.id),
+        id: marketId,
         route: { from: "Stockholm", to, line: "X2000", hot: Math.abs(yesProb - 50) > 10 },
         dep,
         question: "Kommer Stockholm→" + to + " X2000 avg " + dep + " fram i tid?",
