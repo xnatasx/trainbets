@@ -68,9 +68,10 @@ async function createMarkets(contract, apiKey) {
   const cutoff = now + MARKET_LOOKAHEAD_HOURS * 3600000;
   const today  = new Date().toISOString().slice(0, 10);
   const count  = Number(await contract.marketCount());
-  const allMkts = await Promise.all(
+  const settled1 = await Promise.allSettled(
     Array.from({ length: count }, (_, i) => contract.markets(i + 1))
   );
+  const allMkts = settled1.map(r => r.status === 'fulfilled' ? r.value : null).filter(Boolean);
   const existing = new Set(allMkts.map(m => m.trainId + "|" + m.departureDate));
   let created = 0;
   for (const train of trains) {
@@ -99,11 +100,11 @@ async function resolveMarkets(contract, apiKey) {
   console.log("Resolving markets...");
   const count   = Number(await contract.marketCount());
   const now     = Math.floor(Date.now() / 1000);
-  const allMkts = await Promise.all(
+  const settled2 = await Promise.allSettled(
     Array.from({ length: count }, (_, i) => contract.markets(i + 1))
   );
+  const allMkts = settled2.map((r, i) => r.status === 'fulfilled' ? { ...r.value, marketId: i + 1 } : null).filter(Boolean);
   const toResolve = allMkts
-    .map((m, i) => ({ ...m, marketId: i + 1 }))
     .filter(m => m.outcome === BigInt(Outcome.Unresolved) && Number(m.closingTime) <= now);
   console.log(toResolve.length + " markets need resolving");
   let resolved = 0;
