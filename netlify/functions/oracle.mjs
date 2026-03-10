@@ -64,6 +64,7 @@ async function fetchArrivalStatus(apiKey, trainIdent, destSig, departureDate) {
 async function createMarkets(contract, apiKey) {
   console.log("Creating markets...");
   const trains = await fetchTodayDepartures(apiKey);
+  console.log('TV API returned', trains.length, 'departures');
   const now    = Date.now();
   const cutoff = now + MARKET_LOOKAHEAD_HOURS * 3600000;
   const today  = new Date().toISOString().slice(0, 10);
@@ -105,7 +106,7 @@ async function resolveMarkets(contract, apiKey) {
   const settled2 = await Promise.allSettled(
     Array.from({ length: count }, (_, i) => contract.markets(i + 1))
   );
-  const allMkts = settled2.map((r, i) => r.status === 'fulfilled' ? { ...r.value, marketId: i + 1 } : null).filter(Boolean);
+  const allMkts = settled2.map((r, i) => r.status !== 'fulfilled' ? null : { trainId: r.value.trainId, departureDate: r.value.departureDate, closingTime: r.value.closingTime, outcome: r.value.outcome, totalYes: r.value.totalYes, totalNo: r.value.totalNo, marketId: i + 1 }).filter(Boolean);
   const toResolve = allMkts
     .filter(m => Number(m.outcome) === Outcome.Unresolved && Number(m.closingTime) <= now);
   console.log(toResolve.length + " markets need resolving");
