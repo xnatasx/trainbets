@@ -67,7 +67,8 @@ async function createMarkets(contract, apiKey) {
   const now    = Date.now();
   const cutoff = now + MARKET_LOOKAHEAD_HOURS * 3600000;
   const today  = new Date().toISOString().slice(0, 10);
-  const count  = Number(await contract.marketCount());
+  let count = 0;
+  try { count = Number(await contract.marketCount()); } catch(e) { console.error('marketCount err: ' + e.message); return; }
   const settled1 = await Promise.allSettled(
     Array.from({ length: count }, (_, i) => contract.markets(i + 1))
   );
