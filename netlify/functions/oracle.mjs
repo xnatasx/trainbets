@@ -20,6 +20,7 @@ const BASE_GAS = {
 };
 
 async function tvFetch(apiKey, objecttype, filter, includes) {
+  console.log('tvFetch filter:', JSON.stringify(filter).slice(0, 400));
   const r = await fetch(TV_API, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
