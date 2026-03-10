@@ -35,7 +35,6 @@ async function fetchTodayDepartures(apiKey) {
     AND: [
       { EQ: { name: "ActivityType",             value: "Avgang"                      } },
       { EQ: { name: "LocationSignature",        value: "Cst"                         } },
-      { EQ: { name: "Advertised",               value: "true"                        } },
       { GT: { name: "AdvertisedTimeAtLocation", value: today + "T00:00:00.000+01:00" } },
       { LT: { name: "AdvertisedTimeAtLocation", value: today + "T23:59:59.000+01:00" } },
     ],
