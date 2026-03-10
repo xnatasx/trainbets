@@ -98,14 +98,15 @@ async function createMarkets(contract, apiKey) {
 
 async function resolveMarkets(contract, apiKey) {
   console.log("Resolving markets...");
-  const count   = Number(await contract.marketCount());
+  let count = 0;
+  try { count = Number(await contract.marketCount()); } catch(e) { console.error('marketCount err: ' + e.message); return; }
   const now     = Math.floor(Date.now() / 1000);
   const settled2 = await Promise.allSettled(
     Array.from({ length: count }, (_, i) => contract.markets(i + 1))
   );
   const allMkts = settled2.map((r, i) => r.status === 'fulfilled' ? { ...r.value, marketId: i + 1 } : null).filter(Boolean);
   const toResolve = allMkts
-    .filter(m => m.outcome === BigInt(Outcome.Unresolved) && Number(m.closingTime) <= now);
+    .filter(m => Number(m.outcome) === Outcome.Unresolved && Number(m.closingTime) <= now);
   console.log(toResolve.length + " markets need resolving");
   let resolved = 0;
   for (const m of toResolve) {
