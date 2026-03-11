@@ -303,7 +303,7 @@ footer{text-align:center;padding:28px 20px;color:var(--muted);font-size:13px;
       </div>
       <div class="stat">
         <span class="stat-value" id="stat-players">—</span>
-        <span class="stat-label" id="label-players">Aktiva spelare</span>
+        <span class="stat-label" id="label-players">Marknader idag</span>
       </div>
     </div>
   </section>
@@ -522,7 +522,7 @@ const T = {
     heroTitle:"Betta på svenska tågankomster",
     heroSub:"Prediction market för SJ-förseningar. Betta med USDC på Base — helt on-chain, direkta utbetalningar.",
     liveBadge:"Live Trafikverket-data · Uppdateras var 60:e sekund",
-    lMarkets:"Aktiva marknader", lVolume:"24H Volym", lOntime:"I tid idag", lPlayers:"Aktiva spelare",
+    lMarkets:"Aktiva marknader", lVolume:"Volym idag", lOntime:"I tid idag", lPlayers:"Marknader idag",
     tMarkets:"Marknader", tStations:"Stationer", tHowto:"Hur det fungerar", tContract:"Kontrakt", tProfile:"Profil",
     subOpen:"Öppna", subPending:"Väntar", subResolved:"Avgjorda",
     loading:"Laddar marknader från kedjan…",
@@ -560,7 +560,7 @@ const T = {
     heroTitle:"Bet on Swedish Train Arrivals",
     heroSub:"Prediction market for SJ train delays. Bet USDC on Base — fully on-chain, instant payouts.",
     liveBadge:"Live Trafikverket data · Updates every 60 seconds",
-    lMarkets:"Active Markets", lVolume:"24H Volume", lOntime:"On Time Today", lPlayers:"Active Players",
+    lMarkets:"Active Markets", lVolume:"Today's Volume", lOntime:"On Time Today", lPlayers:"Today's Markets",
     tMarkets:"Markets", tStations:"Stations", tHowto:"How It Works", tContract:"Contract", tProfile:"Profile",
     subOpen:"Open", subPending:"Pending", subResolved:"Resolved",
     loading:"Loading markets from chain…",
@@ -697,15 +697,19 @@ async function loadUserBets(markets) {
 
 // ═══ STATS ════════════════════════════════════════════════════
 function updateStats() {
-  const n = nowSec();
-  const open = allMarkets.filter(m => m.outcome===0 && m.closingTime>n);
-  const res  = allMarkets.filter(m => m.outcome!==0);
-  const ot   = res.filter(m => m.outcome===1);
-  const vol  = allMarkets.reduce((s,m) => s+m.totalYes+m.totalNo, 0n);
-  document.getElementById("stat-markets").textContent = open.length;
-  document.getElementById("stat-volume").textContent  = fmtUSDC(vol);
-  document.getElementById("stat-ontime").textContent  = res.length ? Math.round(ot.length/res.length*100)+"%" : "—";
-  document.getElementById("stat-players").textContent = allMarkets.length ? Math.max(1, allMarkets.length*2+50) : "—";
+  const n     = nowSec();
+  const today = new Date().toISOString().slice(0,10);
+  const open  = allMarkets.filter(m => m.outcome===0 && m.closingTime>n);
+  // Only count today's markets for volume + on-time % so we don't show all-time accumulated totals
+  const todayMkts = allMarkets.filter(m => (m.date||"").startsWith(today));
+  const res   = todayMkts.filter(m => m.outcome!==0);
+  const ot    = res.filter(m => m.outcome===1);
+  const vol   = todayMkts.reduce((s,m) => s+m.totalYes+m.totalNo, 0n);
+  document.getElementById("stat-markets").textContent = open.length  || "—";
+  document.getElementById("stat-volume").textContent  = vol > 0n ? fmtUSDC(vol) : "—";
+  document.getElementById("stat-ontime").textContent  = res.length   ? Math.round(ot.length/res.length*100)+"%" : "—";
+  // Show real total market count from chain (no fake formula)
+  document.getElementById("stat-players").textContent = todayMkts.length || "—";
 }
 
 // ═══ TRAFIKVERKET TICKER ══════════════════════════════════════
