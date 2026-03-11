@@ -86,7 +86,9 @@ async function run() {
   const mkts  = (await Promise.allSettled(
     Array.from({ length: count }, (_, i) => contract.markets(i + 1))
   )).map((r, i) => r.status === "fulfilled"
-    ? { ...r.value, marketId: i + 1, outcome: Number(r.value.outcome), closingTime: Number(r.value.closingTime) }
+    ? { trainId: r.value.trainId, departureDate: r.value.departureDate,
+        closingTime: Number(r.value.closingTime), outcome: Number(r.value.outcome),
+        totalYes: r.value.totalYes, totalNo: r.value.totalNo, marketId: i + 1 }
     : null
   ).filter(Boolean);
 
