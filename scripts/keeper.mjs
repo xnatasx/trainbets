@@ -94,18 +94,25 @@ async function run() {
 
   // — Create new markets —
   const trains  = await fetchDepartures(apiKey);
+  console.log(`[Keeper] ${trains.length} departures from Trafikverket`);
+  // Debug: print first 5 trains so we can see what ToLocation actually contains
+  trains.slice(0, 5).forEach((t, i) =>
+    console.log(`[Keeper] train[${i}]: ${t.AdvertisedTrainIdent} ${t.AdvertisedTimeAtLocation} ToLocation=${JSON.stringify(t.ToLocation)}`)
+  );
   const existing = new Set(mkts.map(m => m.trainId + "|" + m.departureDate));
   const cutoff  = now + 8 * 3600; // 8h lookahead
   let created = 0;
+  let skipped = { past: 0, future: 0, dest: 0, exists: 0 };
 
   for (const train of trains) {
     const deptMs = new Date(train.AdvertisedTimeAtLocation).getTime();
     const deptSec = deptMs / 1000;
-    if (deptSec < now || deptSec > cutoff) continue;
+    if (deptSec < now) { skipped.past++; continue; }
+    if (deptSec > cutoff) { skipped.future++; continue; }
     const dest = train.ToLocation?.[0]?.LocationName;
-    if (!DEST_SIGS.includes(dest)) continue;
+    if (!DEST_SIGS.includes(dest)) { skipped.dest++; continue; }
     const trainId = train.AdvertisedTrainIdent + " " + dest;
-    if (existing.has(trainId + "|" + today)) continue;
+    if (existing.has(trainId + "|" + today)) { skipped.exists++; continue; }
     try {
       const tx = await contract.createMarket(trainId, today, Math.floor(deptSec) + 1800, GAS);
       await tx.wait();
@@ -116,6 +123,7 @@ async function run() {
       console.error(`[Keeper] Create failed ${trainId}: ${err.message}`);
     }
   }
+  console.log(`[Keeper] Skipped: past=${skipped.past} future=${skipped.future} wrongDest=${skipped.dest} alreadyExists=${skipped.exists}`);
   console.log(`[Keeper] Created ${created} markets`);
 
   // — Resolve expired markets —
