@@ -26,7 +26,10 @@ async function tvFetch(apiKey, objecttype, filter, includes) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ REQUEST: { LOGIN: { authenticationkey: apiKey }, QUERY: [{ objecttype, schemaversion: "1.8", FILTER: filter, INCLUDE: includes }] } }),
   });
-  return ((await r.json())?.RESPONSE?.RESULT?.[0]) ?? {};
+  const json = await r.json();
+  const result = json?.RESPONSE?.RESULT?.[0] ?? {};
+  if (result.ERROR) console.error("Trafikverket API error: " + JSON.stringify(result.ERROR));
+  return result;
 }
 
 async function fetchTodayDepartures(apiKey) {
@@ -65,6 +68,9 @@ async function createMarkets(contract, apiKey) {
   console.log("Creating markets...");
   const trains = await fetchTodayDepartures(apiKey);
   console.log('TV API returned', trains.length, 'departures');
+  trains.slice(0, 3).forEach((t, i) =>
+    console.log(`[Oracle] train[${i}]: ${t.AdvertisedTrainIdent} ${t.AdvertisedTimeAtLocation} ToLocation=${JSON.stringify(t.ToLocation)}`)
+  );
   const now    = Date.now();
   const cutoff = now + MARKET_LOOKAHEAD_HOURS * 3600000;
   const today  = new Date().toISOString().slice(0, 10);
@@ -79,8 +85,8 @@ async function createMarkets(contract, apiKey) {
   for (const train of trains) {
     const deptMs = new Date(train.AdvertisedTimeAtLocation).getTime();
     if (deptMs < now || deptMs > cutoff) continue;
-    const dest = train.ToLocation?.[0]?.LocationName;
-    if (!DEST_SIGNATURES.includes(dest)) continue;
+    const dest = train.ToLocation?.find(l => DEST_SIGNATURES.includes(l.LocationName))?.LocationName;
+    if (!dest) continue;
     const trainId = train.AdvertisedTrainIdent + " " + dest;
     if (existing.has(trainId + "|" + today)) continue;
     try {

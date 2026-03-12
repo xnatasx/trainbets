@@ -31,7 +31,9 @@ async function tvFetch(apiKey, objecttype, filter, includes) {
     }),
   });
   const json = await r.json();
-  return json?.RESPONSE?.RESULT?.[0] ?? {};
+  const result = json?.RESPONSE?.RESULT?.[0] ?? {};
+  if (result.ERROR) console.error(`[Keeper] Trafikverket API error: ${JSON.stringify(result.ERROR)}`);
+  return result;
 }
 
 async function fetchDepartures(apiKey) {
@@ -109,8 +111,8 @@ async function run() {
     const deptSec = deptMs / 1000;
     if (deptSec < now) { skipped.past++; continue; }
     if (deptSec > cutoff) { skipped.future++; continue; }
-    const dest = train.ToLocation?.[0]?.LocationName;
-    if (!DEST_SIGS.includes(dest)) { skipped.dest++; continue; }
+    const dest = train.ToLocation?.find(l => DEST_SIGS.includes(l.LocationName))?.LocationName;
+    if (!dest) { skipped.dest++; continue; }
     const trainId = train.AdvertisedTrainIdent + " " + dest;
     if (existing.has(trainId + "|" + today)) { skipped.exists++; continue; }
     try {
