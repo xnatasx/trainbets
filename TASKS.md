@@ -6,19 +6,19 @@ Read `CLAUDE.md` first for full project context, addresses and architecture.
 **Last updated:** 2026-03-12
 **Latest working commit:** `878bcf2`
 **Site:** https://trainbets.netlify.app
-**GitHub PAT (workflow scope):** `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`
+**GitHub PAT (workflow scope):** stored in your password manager — do not commit to repo
 
 ---
 
 ## Quick-start (clone & run)
 
 ```bash
-git clone https://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@github.com/xnatasx/trainbets.git
+git clone https://<YOUR_GITHUB_PAT>@github.com/xnatasx/trainbets.git
 cd trainbets && npm install
 
 # Push changes
 git add -A && git commit -m "your message"
-git push https://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@github.com/xnatasx/trainbets.git main
+git push https://<YOUR_GITHUB_PAT>@github.com/xnatasx/trainbets.git main
 ```
 
 Netlify auto-deploys on every push to `main`. Never use Netlify drag-and-drop — functions won't bundle.
@@ -36,14 +36,14 @@ Netlify auto-deploys on every push to `main`. Never use Netlify drag-and-drop �
 ```bash
 # Trigger a manual run
 curl -s -X POST \
-  -H "Authorization: token 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" \
+  -H "Authorization: token <YOUR_GITHUB_PAT>" \
   -H "Accept: application/vnd.github.v3+json" \
   https://api.github.com/repos/xnatasx/trainbets/actions/workflows/keeper.yml/dispatches \
   -d '{"ref":"main"}'
 
 # Check status of last 3 runs
 curl -s \
-  -H "Authorization: token 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" \
+  -H "Authorization: token <YOUR_GITHUB_PAT>" \
   "https://api.github.com/repos/xnatasx/trainbets/actions/runs?per_page=3" \
   | node -e "const d=require('fs').readFileSync('/dev/stdin','utf8'); \
     JSON.parse(d).workflow_runs.forEach(r=> \
