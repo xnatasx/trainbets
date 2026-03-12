@@ -723,7 +723,6 @@ async function refreshTicker() {
         filter:{AND:[
           {EQ:{name:"ActivityType", value:"Ankomst"}},
           {IN:{name:"LocationSignature", value:["G","M","Son","U"]}},
-          {EQ:{name:"Advertised", value:"true"}},
           {GT:{name:"AdvertisedTimeAtLocation", value:today+"T00:00:00.000+01:00"}},
           {LT:{name:"AdvertisedTimeAtLocation", value:today+"T23:59:59.000+01:00"}},
         ]},
@@ -741,7 +740,11 @@ async function refreshTicker() {
 }
 
 function renderTicker(arr) {
-  if (!arr.length) return;
+  if (!arr.length) {
+    document.getElementById("ticker-content").innerHTML =
+      `<span class="ticker-item"><span style="color:var(--muted)">●</span> ${lang==="sv"?"Inga tågdata tillgängliga just nu":"No train data available right now"}</span>`;
+    return;
+  }
   const items = arr.slice(0,20).map(a => {
     const d = DEST[a.LocationSignature] || {sv:a.LocationSignature,en:a.LocationSignature};
     const dest = d[lang]||d.sv;
