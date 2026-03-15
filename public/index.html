@@ -664,12 +664,33 @@ function getOdds(mine, other) {
 const nowSec = () => Math.floor(Date.now()/1000);
 
 // ═══ CHAIN READ ═══════════════════════════════════════════════
-function getRPC() { return new ethers.JsonRpcProvider("https://mainnet.base.org"); }
+const RPC_URLS = [
+  "https://mainnet.base.org",
+  "https://base.llamarpc.com",
+  "https://base-rpc.publicnode.com",
+];
+
+async function getWorkingContract() {
+  for (const url of RPC_URLS) {
+    try {
+      const rpc = new ethers.JsonRpcProvider(url);
+      const c   = new ethers.Contract(CONTRACT, ABI, rpc);
+      // Probe with a lightweight call
+      await rpc.getBlockNumber();
+      return c;
+    } catch {}
+  }
+  throw new Error("Alla RPC-noder otillgängliga. Försök igen senare.");
+}
 
 async function loadMarkets() {
-  const rpc = getRPC();
-  const c   = new ethers.Contract(CONTRACT, ABI, rpc);
-  const n   = Number(await c.marketCount());
+  const c = await getWorkingContract();
+  let n;
+  try {
+    n = Number(await c.marketCount());
+  } catch(err) {
+    throw new Error("Kontraktet svarar inte: " + err.message);
+  }
   if (!n) return [];
   const rs = await Promise.allSettled(
     Array.from({length:n},(_,i) => c.markets(BigInt(i+1)))
@@ -685,8 +706,8 @@ async function loadMarkets() {
 
 async function loadUserBets(markets) {
   if (!account) return;
-  const rpc = getRPC();
-  const c   = new ethers.Contract(CONTRACT, ABI, rpc);
+  let c;
+  try { c = await getWorkingContract(); } catch { return; }
   await Promise.allSettled(markets.map(async m => {
     try {
       const b = await c.getUserBet(BigInt(m.id), account);
