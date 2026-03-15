@@ -100,10 +100,6 @@ async function run() {
   // — Create new markets —
   const trains  = await fetchDepartures(apiKey);
   console.log(`[Keeper] ${trains.length} departures from Trafikverket`);
-  // Debug: print first 5 trains so we can see what ToLocation actually contains
-  trains.slice(0, 5).forEach((t, i) =>
-    console.log(`[Keeper] train[${i}]: ${t.AdvertisedTrainIdent} ${t.AdvertisedTimeAtLocation} ToLocation=${JSON.stringify(t.ToLocation)}`)
-  );
   const existing = new Set(mkts.map(m => m.trainId + "|" + m.departureDate));
   const cutoff  = now + 8 * 3600; // 8h lookahead
   let created = 0;

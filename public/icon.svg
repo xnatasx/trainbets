@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#08080f"/>
+  <rect x="112" y="96" width="288" height="240" rx="32" fill="#1c1c2e" stroke="#3b82f6" stroke-width="8"/>
+  <rect x="144" y="128" width="96" height="80" rx="12" fill="#3b82f6" opacity=".7"/>
+  <rect x="272" y="128" width="96" height="80" rx="12" fill="#3b82f6" opacity=".7"/>
+  <rect x="144" y="240" width="224" height="16" rx="4" fill="#3b82f6" opacity=".4"/>
+  <rect x="80" y="336" width="352" height="24" rx="12" fill="#3b82f6" opacity=".5"/>
+  <circle cx="176" cy="400" r="32" fill="#1c1c2e" stroke="#3b82f6" stroke-width="8"/>
+  <circle cx="176" cy="400" r="12" fill="#3b82f6"/>
+  <circle cx="336" cy="400" r="32" fill="#1c1c2e" stroke="#3b82f6" stroke-width="8"/>
+  <circle cx="336" cy="400" r="12" fill="#3b82f6"/>
+  <rect x="48" y="320" width="32" height="80" rx="8" fill="#3b82f6" opacity=".4"/>
+  <rect x="432" y="320" width="32" height="80" rx="8" fill="#3b82f6" opacity=".4"/>
+  <!-- Upward trend line (prediction market) -->
+  <polyline points="152,420 200,390 248,410 296,370 360,350" fill="none" stroke="#22c55e" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" opacity=".9"/>
+</svg>

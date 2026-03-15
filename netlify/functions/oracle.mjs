@@ -20,7 +20,6 @@ const BASE_GAS = {
 };
 
 async function tvFetch(apiKey, objecttype, filter, includes, limit = 1000) {
-  console.log('tvFetch filter:', JSON.stringify(filter).slice(0, 400));
   const r = await fetch(TV_API, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -69,9 +68,6 @@ async function createMarkets(contract, apiKey) {
   console.log("Creating markets...");
   const trains = await fetchTodayDepartures(apiKey);
   console.log('TV API returned', trains.length, 'departures');
-  trains.slice(0, 3).forEach((t, i) =>
-    console.log(`[Oracle] train[${i}]: ${t.AdvertisedTrainIdent} ${t.AdvertisedTimeAtLocation} ToLocation=${JSON.stringify(t.ToLocation)}`)
-  );
   const now    = Date.now();
   const cutoff = now + MARKET_LOOKAHEAD_HOURS * 3600000;
   const today  = new Date().toISOString().slice(0, 10);

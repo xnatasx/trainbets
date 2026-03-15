@@ -238,6 +238,20 @@ footer{text-align:center;padding:28px 20px;color:var(--muted);font-size:13px;
   .chain-pill{display:none}
   .hero h1{font-size:38px}
 }
+/* Light mode */
+body.light{
+  --bg:#f0f4f8;--surface:#e8edf2;--card:#ffffff;--border:#cbd5e1;
+  --text:#1e293b;--muted:#64748b;
+  background-image:linear-gradient(rgba(37,99,235,.04) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(37,99,235,.04) 1px,transparent 1px);
+}
+body.light header{background:rgba(240,244,248,.92)}
+body.light .ticker-wrap{background:rgba(0,0,0,.05)}
+/* Toast */
+#toast{display:none;position:fixed;bottom:24px;right:24px;
+  background:var(--card);border:1px solid var(--border);border-radius:12px;
+  padding:14px 20px;font-size:14px;font-weight:600;z-index:300;
+  box-shadow:0 8px 32px rgba(0,0,0,.4);transition:opacity .3s}
 </style>
 </head>
 <body>
@@ -265,7 +279,7 @@ footer{text-align:center;padding:28px 20px;color:var(--muted);font-size:13px;
   </div>
   <div class="header-right">
     <button class="lang-toggle" id="btn-lang">EN</button>
-    <button class="dark-toggle" id="btn-dark">🌙</button>
+    <button class="dark-toggle" id="btn-dark">☀️</button>
     <button id="btn-wallet">Anslut plånbok</button>
   </div>
 </header>
@@ -447,6 +461,9 @@ footer{text-align:center;padding:28px 20px;color:var(--muted);font-size:13px;
     </div>
   </div>
 </main>
+
+<!-- Toast -->
+<div id="toast"></div>
 
 <!-- Bet Modal -->
 <div id="modal-overlay">
@@ -655,7 +672,8 @@ function parseTrainId(tid) {
 }
 function poolPct(yes, no) {
   const t = yes+no; if (!t) return [50,50];
-  return [Number(yes*100n/t), Number(no*100n/t)];
+  const yp = Number(yes*100n/t);
+  return [yp, 100-yp]; // ensure sum is exactly 100 (avoids BigInt truncation gap)
 }
 function getOdds(mine, other) {
   const t = mine+other; if (!t||!mine) return "∞×";
@@ -988,6 +1006,15 @@ function showAlert(msg, err) {
   el.style.display = "block";
 }
 
+function showToast(msg, ok=true) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.style.color = ok ? "var(--green)" : "var(--red)";
+  el.style.display = "block";
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { el.style.display = "none"; }, 3500);
+}
+
 async function doApprove() {
   const btn = document.getElementById("btn-approve");
   document.getElementById("modal-alert").style.display = "none";
@@ -1037,9 +1064,9 @@ async function claimWinnings(marketId) {
   try {
     const c = new ethers.Contract(CONTRACT, ABI, signer);
     await (await c.claimWinnings(BigInt(marketId))).wait();
-    alert(lang==="sv"?"Vinster hämtade! 🎉":"Winnings claimed! 🎉");
+    showToast(lang==="sv"?"Vinster hämtade! 🎉":"Winnings claimed! 🎉", true);
     init();
-  } catch(err) { alert(err.reason||err.message||"Failed."); }
+  } catch(err) { showToast(err.reason||err.message||"Failed.", false); }
 }
 
 // ═══ PWA ══════════════════════════════════════════════════════
@@ -1069,7 +1096,9 @@ document.getElementById("btn-lang").addEventListener("click", () => {
 
 document.getElementById("btn-dark").addEventListener("click", () => {
   document.body.classList.toggle("light");
-  document.getElementById("btn-dark").textContent = document.body.classList.contains("light") ? "🌙" : "☀️";
+  const isLight = document.body.classList.contains("light");
+  document.getElementById("btn-dark").textContent = isLight ? "🌙" : "☀️";
+  localStorage.setItem("theme", isLight ? "light" : "dark");
 });
 
 document.querySelectorAll(".tab-btn").forEach(btn =>
@@ -1109,7 +1138,10 @@ if (window.ethereum) {
 }
 
 // ═══ INIT ══════════════════════════════════════════════════════
+let _initRunning = false;
 async function init() {
+  if (_initRunning) return;
+  _initRunning = true;
   document.getElementById("markets-container").innerHTML =
     `<div class="loading"><div class="spinner"></div>${t("loading")}</div>`;
   try {
@@ -1119,10 +1151,17 @@ async function init() {
   } catch(err) {
     document.getElementById("markets-container").innerHTML =
       `<div class="empty">⚠️ ${lang==="sv"?"Kunde inte ladda marknader.":"Failed to load markets."}<br><small>${err.message}</small></div>`;
+  } finally {
+    _initRunning = false;
   }
 }
 
 applyLang();
+// Restore saved theme
+if (localStorage.getItem("theme") === "light") {
+  document.body.classList.add("light");
+  document.getElementById("btn-dark").textContent = "🌙";
+}
 init();
 refreshTicker();
 setInterval(init, 120_000);
