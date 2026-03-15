@@ -167,7 +167,7 @@ The entire frontend is a single self-contained HTML file (~1,100 lines). It incl
 - Embedded CSS (styles in `<style>` tag)
 - Embedded JavaScript (app logic in `<script>` tag)
 - Bilingual UI (Swedish primary, English secondary)
-- PWA manifest (installable as mobile app)
+- Dark/light mode toggle with localStorage persistence
 - Tab navigation: Markets, Stations, How It Works, Contract Info, Profile
 
 **Tabs use hash routing:** `#marknader`, `#stationer`, `#howto`, `#kontrakt`, `#profil`
