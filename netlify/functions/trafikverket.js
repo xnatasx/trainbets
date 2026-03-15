@@ -21,7 +21,15 @@ export async function handler(event) {
 
   try {
     const apiKey = process.env.TRAFIKVERKET_API_KEY || "4135d9b931704bf99d40ca7f84fcf9ad";
-    const { objectType = "TrainAnnouncement", filter, includes } = JSON.parse(event.body);
+    const { objectType = "TrainAnnouncement", filter, includes, limit } = JSON.parse(event.body);
+
+    const query = {
+      objecttype: objectType,
+      schemaversion: "1.8",
+      FILTER: filter,
+      INCLUDE: includes,
+    };
+    if (limit) query.LIMIT = limit;
 
     const response = await fetch("https://api.trafikinfo.trafikverket.se/v2/data.json", {
       method: "POST",
@@ -29,12 +37,7 @@ export async function handler(event) {
       body: JSON.stringify({
         REQUEST: {
           LOGIN: { authenticationkey: apiKey },
-          QUERY: [{
-            objecttype: objectType,
-            schemaversion: "1.8",
-            FILTER: filter,
-            INCLUDE: includes,
-          }],
+          QUERY: [query],
         },
       }),
     });

@@ -736,18 +736,21 @@ function updateStats() {
 // ═══ TRAFIKVERKET TICKER ══════════════════════════════════════
 async function refreshTicker() {
   try {
-    const today = new Date().toISOString().slice(0,10);
+    // Use Swedish local date (CET/CEST) so the date matches what Trafikverket serves
+    const today = new Date().toLocaleDateString("sv-SE");
     const res = await fetch(TV_PROXY, {
       method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify({
         objectType:"TrainAnnouncement",
         filter:{AND:[
-          {EQ:[{name:"ActivityType", value:"Ankomst"}]},
-          {IN:[{name:"LocationSignature", value:["G","M","Son","U"]}]},
+          {EQ:[{name:"ActivityType",            value:"Avgang"}]},
+          {EQ:[{name:"LocationSignature",       value:"Cst"}]},
+          {IN:[{name:"ToLocation.LocationName", value:["G","M","Son","U"]}]},
           {GT:[{name:"AdvertisedTimeAtLocation", value:today+"T00:00:00.000+01:00"}]},
           {LT:[{name:"AdvertisedTimeAtLocation", value:today+"T23:59:59.000+01:00"}]},
         ]},
-        includes:["AdvertisedTrainIdent","AdvertisedTimeAtLocation","TimeAtLocation","LocationSignature","Canceled"]
+        includes:["AdvertisedTrainIdent","AdvertisedTimeAtLocation","TimeAtLocation","ToLocation","Canceled"],
+        limit: 50
       })
     });
     const data = await res.json();
@@ -766,8 +769,10 @@ function renderTicker(arr) {
       `<span class="ticker-item"><span style="color:var(--muted)">●</span> ${lang==="sv"?"Inga tågdata tillgängliga just nu":"No train data available right now"}</span>`;
     return;
   }
+  const DEST_SIGS = ["G","M","Son","U"];
   const items = arr.slice(0,20).map(a => {
-    const d = DEST[a.LocationSignature] || {sv:a.LocationSignature,en:a.LocationSignature};
+    const destSig = a.ToLocation?.find(l => DEST_SIGS.includes(l.LocationName))?.LocationName;
+    const d = DEST[destSig] || {sv:destSig||"?",en:destSig||"?"};
     const dest = d[lang]||d.sv;
     const sched = new Date(a.AdvertisedTimeAtLocation);
     const schedStr = sched.toLocaleTimeString("sv-SE",{hour:"2-digit",minute:"2-digit"});
@@ -781,7 +786,7 @@ function renderTicker(arr) {
     } else {
       status = lang==="sv"?"Väntas":"Expected";
     }
-    return `<span class="ticker-item">${dot} X2000 ${a.AdvertisedTrainIdent} Stockholm→${dest} · ${schedStr} · <strong>${status}</strong></span>`;
+    return `<span class="ticker-item">${dot} ${a.AdvertisedTrainIdent} Stockholm→${dest} · ${schedStr} · <strong>${status}</strong></span>`;
   });
   const html = items.join("")+items.join("");
   document.getElementById("ticker-content").innerHTML = html;
@@ -814,10 +819,12 @@ function renderAllTabs() {
 
 function renderMarkets() {
   const n = nowSec();
+  const today = new Date().toLocaleDateString("sv-SE"); // YYYY-MM-DD in Swedish locale = local date
   const filters = {
-    open:     m => m.outcome===0 && m.closingTime>n,
-    pending:  m => m.outcome===0 && m.closingTime<=n,
-    resolved: m => m.outcome!==0,
+    open:     m => m.outcome===0 && m.closingTime>n && m.date===today,
+    pending:  m => m.outcome===0 && m.closingTime<=n && m.date===today,
+    // resolved: today only, skip markets with zero bets (no participation)
+    resolved: m => m.outcome!==0 && m.date===today && (m.totalYes>0n||m.totalNo>0n),
   };
   const noMsg = {open:t("noOpen"), pending:t("noPending"), resolved:t("noResolved")};
   const visible = allMarkets.filter(filters[activeSubTab] || filters.open);
