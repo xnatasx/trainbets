@@ -26,4 +26,12 @@ jobs:
           KEEPER_PRIVATE_KEY:   ${{ secrets.KEEPER_PRIVATE_KEY }}
           RPC_URL:              "https://mainnet.base.org"
           CONTRACT_ADDRESS:     "0xB54bCee43ACad2c99e59Bc89f19823181DA4ceF9"
-        run: node scripts/keeper.mjs
+        run: node scripts/keeper.mjs 2>&1 | tee keeper.log
+
+      - name: Upload keeper log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: keeper-log-${{ github.run_id }}
+          path: keeper.log
+          retention-days: 3
