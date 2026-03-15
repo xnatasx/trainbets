@@ -503,7 +503,7 @@ let allMarkets   = [];
 let activeTab    = "marknader";
 let activeSubTab = "open";
 let betModal     = {};
-let lang         = "sv";
+let lang         = localStorage.getItem("lang") || "sv";
 let tickerCache  = [];
 let deferredPWA  = null;
 
@@ -757,7 +757,7 @@ async function refreshTicker() {
     const arr  = data?.RESPONSE?.RESULT?.[0]?.TrainAnnouncement ?? [];
     tickerCache = arr;
     renderTicker(arr);
-    updateStationStats(arr);
+    updateStationStats();
   } catch(err) {
     console.warn("[Ticker]", err.message);
   }
@@ -794,16 +794,18 @@ function renderTicker(arr) {
   if (el) el.style.animationDuration = Math.max(30,items.length*3)+"s";
 }
 
-function updateStationStats(arr) {
+function updateStationStats() {
+  const today = new Date().toISOString().slice(0,10);
   const sigs = {G:"g",M:"m",Son:"son",U:"u"};
   for (const [sig,id] of Object.entries(sigs)) {
     const el = document.getElementById(id+"-stat");
     if (!el) continue;
-    const f = arr.filter(a => a.LocationSignature===sig && a.TimeAtLocation);
-    if (!f.length) { el.textContent = lang==="sv"?"Inga ankomster idag":"No arrivals today"; continue; }
-    const ot = f.filter(a => Math.round((new Date(a.TimeAtLocation)-new Date(a.AdvertisedTimeAtLocation))/60000)<=5);
-    const pct = Math.round(ot.length/f.length*100);
-    el.textContent = pct+"% "+(lang==="sv"?"i tid idag":"on time today");
+    // Use resolved on-chain market outcomes (oracle-verified arrival data)
+    const mkts = allMarkets.filter(m => m.date===today && m.outcome!==0 && m.trainId.endsWith(" "+sig));
+    if (!mkts.length) { el.textContent = lang==="sv"?"Inga avgjorda marknader idag":"No resolved markets today"; continue; }
+    const onTime = mkts.filter(m => m.outcome===1);
+    const pct = Math.round(onTime.length/mkts.length*100);
+    el.textContent = pct+"% "+(lang==="sv"?"i tid idag ("+ mkts.length +" tåg)":"on time today ("+ mkts.length +" trains)");
     el.style.background = pct>=70?"rgba(34,197,94,.12)":pct>=50?"rgba(245,158,11,.12)":"rgba(239,68,68,.12)";
     el.style.color = pct>=70?"var(--green)":pct>=50?"var(--yellow)":"var(--red)";
   }
@@ -814,12 +816,12 @@ function renderAllTabs() {
   updateStats();
   if (activeTab==="marknader") renderMarkets();
   else if (activeTab==="profil") renderProfile();
-  else if (activeTab==="stationer") updateStationStats(tickerCache);
+  else if (activeTab==="stationer") updateStationStats();
 }
 
 function renderMarkets() {
   const n = nowSec();
-  const today = new Date().toLocaleDateString("sv-SE"); // YYYY-MM-DD in Swedish locale = local date
+  const today = new Date().toISOString().slice(0,10);
   const filters = {
     open:     m => m.outcome===0 && m.closingTime>n && m.date===today,
     pending:  m => m.outcome===0 && m.closingTime<=n && m.date===today,
@@ -995,6 +997,11 @@ async function doApprove() {
     btn.textContent = "⏳ "+(lang==="sv"?"Godkänner…":"Approving…");
     btn.disabled = true;
     const usdc = new ethers.Contract(USDC_ADDR, USDC_ABI, signer);
+    const balance = await usdc.balanceOf(account);
+    if (balance < units) {
+      btn.textContent = t("approveBtn"); btn.disabled = false;
+      showAlert(lang==="sv"?"Otillräckligt USDC-saldo":"Insufficient USDC balance", true); return;
+    }
     await (await usdc.approve(CONTRACT, units)).wait();
     btn.textContent = "✅ "+(lang==="sv"?"Godkänt":"Approved");
     document.getElementById("btn-bet").disabled = false;
@@ -1053,10 +1060,11 @@ document.getElementById("btn-wallet").addEventListener("click", connectWallet);
 
 document.getElementById("btn-lang").addEventListener("click", () => {
   lang = lang==="sv" ? "en" : "sv";
+  localStorage.setItem("lang", lang);
   applyLang();
   renderAllTabs();
   renderTicker(tickerCache);
-  updateStationStats(tickerCache);
+  updateStationStats();
 });
 
 document.getElementById("btn-dark").addEventListener("click", () => {

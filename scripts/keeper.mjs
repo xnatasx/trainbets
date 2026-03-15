@@ -85,7 +85,9 @@ async function run() {
   const now   = Math.floor(Date.now() / 1000);
 
   // — Load existing markets —
-  const count = Number(await contract.marketCount());
+  let count;
+  try { count = Number(await contract.marketCount()); }
+  catch (err) { console.error("[Keeper] Failed to read marketCount:", err.message); process.exit(1); }
   const mkts  = (await Promise.allSettled(
     Array.from({ length: count }, (_, i) => contract.markets(i + 1))
   )).map((r, i) => r.status === "fulfilled"
