@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TrainBets — Betta på tågankomster</title>
-<link rel="manifest" href="/manifest.json">
 <meta name="theme-color" content="#08080f">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
@@ -27,14 +26,6 @@ body{
 }
 a{color:var(--accent2);text-decoration:none}
 button{cursor:pointer;border:none;font-family:inherit;transition:all .15s}
-/* Install banner */
-#install-banner{display:none;align-items:center;justify-content:space-between;
-  background:linear-gradient(135deg,rgba(59,130,246,.15),rgba(99,102,241,.1));
-  border-bottom:1px solid rgba(59,130,246,.25);padding:10px 24px;gap:12px}
-.banner-text{font-size:14px;font-weight:600}
-.banner-sub{font-size:12px;color:var(--muted);margin-top:2px}
-#btn-install{padding:8px 18px;border-radius:8px;background:var(--accent);
-  color:#fff;font-weight:700;font-size:13px;white-space:nowrap;flex-shrink:0}
 /* Header */
 header{padding:16px 28px;border-bottom:1px solid var(--border);
   display:flex;align-items:center;justify-content:space-between;
@@ -240,13 +231,27 @@ footer{text-align:center;padding:28px 20px;color:var(--muted);font-size:13px;
 }
 /* Light mode */
 body.light{
-  --bg:#f0f4f8;--surface:#e8edf2;--card:#ffffff;--border:#cbd5e1;
-  --text:#1e293b;--muted:#64748b;
-  background-image:linear-gradient(rgba(37,99,235,.04) 1px,transparent 1px),
-    linear-gradient(90deg,rgba(37,99,235,.04) 1px,transparent 1px);
+  --bg:#f0f4f8;--surface:#e2e8f0;--card:#ffffff;--border:#cbd5e1;
+  --text:#1e293b;--muted:#475569;
+  background-image:linear-gradient(rgba(37,99,235,.06) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(37,99,235,.06) 1px,transparent 1px);
 }
-body.light header{background:rgba(240,244,248,.92)}
-body.light .ticker-wrap{background:rgba(0,0,0,.05)}
+body.light header{background:rgba(240,244,248,.95)}
+body.light .ticker-wrap{background:rgba(0,0,0,.04)}
+body.light .logo-train-text{background:linear-gradient(135deg,#1e293b 30%,var(--accent));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent}
+body.light .hero h1{background:linear-gradient(135deg,#0f172a 40%,var(--accent) 80%,var(--accent2));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent}
+body.light .tab-btn.active{box-shadow:0 1px 4px rgba(0,0,0,.1)}
+body.light .mcard{box-shadow:0 1px 3px rgba(0,0,0,.06)}
+body.light .mcard:hover{border-color:rgba(59,130,246,.5)}
+body.light .stat{background:rgba(255,255,255,.7)}
+body.light #modal-overlay{background:rgba(0,0,0,.4)}
+body.light #modal{box-shadow:0 8px 32px rgba(0,0,0,.12)}
+body.light #toast{box-shadow:0 8px 32px rgba(0,0,0,.12)}
+body.light .chain-pill{background:rgba(59,130,246,.08)}
+body.light .pool-bar{background:#e2e8f0}
+body.light .logo{color:#0f172a}
 /* Toast */
 #toast{display:none;position:fixed;bottom:24px;right:24px;
   background:var(--card);border:1px solid var(--border);border-radius:12px;
@@ -256,14 +261,6 @@ body.light .ticker-wrap{background:rgba(0,0,0,.05)}
 </head>
 <body>
 
-<!-- PWA Install Banner -->
-<div id="install-banner">
-  <div>
-    <div class="banner-text">📱 Installera TrainBets</div>
-    <div class="banner-sub">Lägg till på hemskärmen — fungerar offline!</div>
-  </div>
-  <button id="btn-install">Installera app</button>
-</div>
 
 <!-- Header -->
 <header>
@@ -522,7 +519,6 @@ let activeSubTab = "open";
 let betModal     = {};
 let lang         = localStorage.getItem("lang") || "sv";
 let tickerCache  = [];
-let deferredPWA  = null;
 
 // ═══ DESTINATIONS ════════════════════════════════════════════
 const DEST = {
@@ -1069,18 +1065,6 @@ async function claimWinnings(marketId) {
   } catch(err) { showToast(err.reason||err.message||"Failed.", false); }
 }
 
-// ═══ PWA ══════════════════════════════════════════════════════
-window.addEventListener("beforeinstallprompt", e => {
-  e.preventDefault(); deferredPWA = e;
-  document.getElementById("install-banner").style.display = "flex";
-});
-document.getElementById("btn-install").addEventListener("click", async () => {
-  if (!deferredPWA) return;
-  deferredPWA.prompt();
-  const {outcome} = await deferredPWA.userChoice;
-  deferredPWA = null;
-  if (outcome==="accepted") document.getElementById("install-banner").style.display = "none";
-});
 
 // ═══ EVENTS ═══════════════════════════════════════════════════
 document.getElementById("btn-wallet").addEventListener("click", connectWallet);
