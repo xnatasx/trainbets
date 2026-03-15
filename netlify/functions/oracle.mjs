@@ -19,12 +19,12 @@ const BASE_GAS = {
   maxPriorityFeePerGas: ethers.parseUnits("0.001", "gwei"),
 };
 
-async function tvFetch(apiKey, objecttype, filter, includes) {
+async function tvFetch(apiKey, objecttype, filter, includes, limit = 1000) {
   console.log('tvFetch filter:', JSON.stringify(filter).slice(0, 400));
   const r = await fetch(TV_API, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ REQUEST: { LOGIN: { authenticationkey: apiKey }, QUERY: [{ objecttype, schemaversion: "1.8", FILTER: filter, INCLUDE: includes }] } }),
+    body: JSON.stringify({ REQUEST: { LOGIN: { authenticationkey: apiKey }, QUERY: [{ objecttype, schemaversion: "1.8", FILTER: filter, INCLUDE: includes, LIMIT: limit }] } }),
   });
   const json = await r.json();
   const result = json?.RESPONSE?.RESULT?.[0] ?? {};
@@ -38,6 +38,7 @@ async function fetchTodayDepartures(apiKey) {
     AND: [
       { EQ: { name: "ActivityType",             value: "Avgang"                      } },
       { EQ: { name: "LocationSignature",        value: "Cst"                         } },
+      { IN: { name: "ToLocation.LocationName",  value: DEST_SIGNATURES               } },
       { GT: { name: "AdvertisedTimeAtLocation", value: today + "T00:00:00.000+01:00" } },
       { LT: { name: "AdvertisedTimeAtLocation", value: today + "T23:59:59.000+01:00" } },
     ],
