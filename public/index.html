@@ -721,10 +721,10 @@ async function refreshTicker() {
       body: JSON.stringify({
         objectType:"TrainAnnouncement",
         filter:{AND:[
-          {EQ:{name:"ActivityType", value:"Ankomst"}},
-          {IN:{name:"LocationSignature", value:["G","M","Son","U"]}},
-          {GT:{name:"AdvertisedTimeAtLocation", value:today+"T00:00:00.000+01:00"}},
-          {LT:{name:"AdvertisedTimeAtLocation", value:today+"T23:59:59.000+01:00"}},
+          {EQ:[{name:"ActivityType", value:"Ankomst"}]},
+          {IN:[{name:"LocationSignature", value:["G","M","Son","U"]}]},
+          {GT:[{name:"AdvertisedTimeAtLocation", value:today+"T00:00:00.000+01:00"}]},
+          {LT:[{name:"AdvertisedTimeAtLocation", value:today+"T23:59:59.000+01:00"}]},
         ]},
         includes:["AdvertisedTrainIdent","AdvertisedTimeAtLocation","TimeAtLocation","LocationSignature","Canceled"]
       })

@@ -40,11 +40,11 @@ async function fetchDepartures(apiKey) {
   const today = new Date().toISOString().slice(0, 10);
   const res = await tvFetch(apiKey, "TrainAnnouncement", {
     AND: [
-      { EQ: { name: "ActivityType",             value: "Avgang"                      } },
-      { EQ: { name: "LocationSignature",        value: "Cst"                         } },
-      { IN: { name: "ToLocation.LocationName",  value: DEST_SIGS                     } },
-      { GT: { name: "AdvertisedTimeAtLocation", value: today + "T00:00:00.000+01:00" } },
-      { LT: { name: "AdvertisedTimeAtLocation", value: today + "T23:59:59.000+01:00" } },
+      { EQ: [{ name: "ActivityType",             value: "Avgang"                      }] },
+      { EQ: [{ name: "LocationSignature",        value: "Cst"                         }] },
+      { IN: [{ name: "ToLocation.LocationName",  value: DEST_SIGS                     }] },
+      { GT: [{ name: "AdvertisedTimeAtLocation", value: today + "T00:00:00.000+01:00" }] },
+      { LT: [{ name: "AdvertisedTimeAtLocation", value: today + "T23:59:59.000+01:00" }] },
     ],
   }, ["AdvertisedTrainIdent", "AdvertisedTimeAtLocation", "Canceled", "ToLocation"]);
   return res.TrainAnnouncement ?? [];
@@ -53,10 +53,10 @@ async function fetchDepartures(apiKey) {
 async function fetchArrival(apiKey, trainIdent, destSig, departureDate) {
   const res = await tvFetch(apiKey, "TrainAnnouncement", {
     AND: [
-      { EQ:   { name: "ActivityType",               value: "Ankomst"            } },
-      { EQ:   { name: "AdvertisedTrainIdent",       value: trainIdent           } },
-      { EQ:   { name: "LocationSignature",          value: destSig              } },
-      { LIKE: { name: "ScheduledDepartureDateTime", value: departureDate + "%"  } },
+      { EQ:   [{ name: "ActivityType",               value: "Ankomst"           }] },
+      { EQ:   [{ name: "AdvertisedTrainIdent",       value: trainIdent          }] },
+      { EQ:   [{ name: "LocationSignature",          value: destSig             }] },
+      { LIKE: [{ name: "ScheduledDepartureDateTime", value: departureDate + "%" }] },
     ],
   }, ["TimeAtLocation", "AdvertisedTimeAtLocation", "Canceled"]);
   const ann = res.TrainAnnouncement?.[0];
