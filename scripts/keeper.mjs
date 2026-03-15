@@ -85,7 +85,9 @@ async function run() {
   const now   = Math.floor(Date.now() / 1000);
 
   // — Load existing markets —
-  const count = Number(await contract.marketCount());
+  let count;
+  try { count = Number(await contract.marketCount()); }
+  catch (err) { console.error("[Keeper] Failed to read marketCount:", err.message); process.exit(1); }
   const mkts  = (await Promise.allSettled(
     Array.from({ length: count }, (_, i) => contract.markets(i + 1))
   )).map((r, i) => r.status === "fulfilled"
@@ -98,10 +100,6 @@ async function run() {
   // — Create new markets —
   const trains  = await fetchDepartures(apiKey);
   console.log(`[Keeper] ${trains.length} departures from Trafikverket`);
-  // Debug: print first 5 trains so we can see what ToLocation actually contains
-  trains.slice(0, 5).forEach((t, i) =>
-    console.log(`[Keeper] train[${i}]: ${t.AdvertisedTrainIdent} ${t.AdvertisedTimeAtLocation} ToLocation=${JSON.stringify(t.ToLocation)}`)
-  );
   const existing = new Set(mkts.map(m => m.trainId + "|" + m.departureDate));
   const cutoff  = now + 8 * 3600; // 8h lookahead
   let created = 0;

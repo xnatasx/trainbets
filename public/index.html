@@ -238,6 +238,20 @@ footer{text-align:center;padding:28px 20px;color:var(--muted);font-size:13px;
   .chain-pill{display:none}
   .hero h1{font-size:38px}
 }
+/* Light mode */
+body.light{
+  --bg:#f0f4f8;--surface:#e8edf2;--card:#ffffff;--border:#cbd5e1;
+  --text:#1e293b;--muted:#64748b;
+  background-image:linear-gradient(rgba(37,99,235,.04) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(37,99,235,.04) 1px,transparent 1px);
+}
+body.light header{background:rgba(240,244,248,.92)}
+body.light .ticker-wrap{background:rgba(0,0,0,.05)}
+/* Toast */
+#toast{display:none;position:fixed;bottom:24px;right:24px;
+  background:var(--card);border:1px solid var(--border);border-radius:12px;
+  padding:14px 20px;font-size:14px;font-weight:600;z-index:300;
+  box-shadow:0 8px 32px rgba(0,0,0,.4);transition:opacity .3s}
 </style>
 </head>
 <body>
@@ -265,7 +279,7 @@ footer{text-align:center;padding:28px 20px;color:var(--muted);font-size:13px;
   </div>
   <div class="header-right">
     <button class="lang-toggle" id="btn-lang">EN</button>
-    <button class="dark-toggle" id="btn-dark">🌙</button>
+    <button class="dark-toggle" id="btn-dark">☀️</button>
     <button id="btn-wallet">Anslut plånbok</button>
   </div>
 </header>
@@ -448,6 +462,9 @@ footer{text-align:center;padding:28px 20px;color:var(--muted);font-size:13px;
   </div>
 </main>
 
+<!-- Toast -->
+<div id="toast"></div>
+
 <!-- Bet Modal -->
 <div id="modal-overlay">
   <div id="modal">
@@ -503,7 +520,7 @@ let allMarkets   = [];
 let activeTab    = "marknader";
 let activeSubTab = "open";
 let betModal     = {};
-let lang         = "sv";
+let lang         = localStorage.getItem("lang") || "sv";
 let tickerCache  = [];
 let deferredPWA  = null;
 
@@ -655,7 +672,8 @@ function parseTrainId(tid) {
 }
 function poolPct(yes, no) {
   const t = yes+no; if (!t) return [50,50];
-  return [Number(yes*100n/t), Number(no*100n/t)];
+  const yp = Number(yes*100n/t);
+  return [yp, 100-yp]; // ensure sum is exactly 100 (avoids BigInt truncation gap)
 }
 function getOdds(mine, other) {
   const t = mine+other; if (!t||!mine) return "∞×";
@@ -757,7 +775,7 @@ async function refreshTicker() {
     const arr  = data?.RESPONSE?.RESULT?.[0]?.TrainAnnouncement ?? [];
     tickerCache = arr;
     renderTicker(arr);
-    updateStationStats(arr);
+    updateStationStats();
   } catch(err) {
     console.warn("[Ticker]", err.message);
   }
@@ -794,16 +812,18 @@ function renderTicker(arr) {
   if (el) el.style.animationDuration = Math.max(30,items.length*3)+"s";
 }
 
-function updateStationStats(arr) {
+function updateStationStats() {
+  const today = new Date().toISOString().slice(0,10);
   const sigs = {G:"g",M:"m",Son:"son",U:"u"};
   for (const [sig,id] of Object.entries(sigs)) {
     const el = document.getElementById(id+"-stat");
     if (!el) continue;
-    const f = arr.filter(a => a.LocationSignature===sig && a.TimeAtLocation);
-    if (!f.length) { el.textContent = lang==="sv"?"Inga ankomster idag":"No arrivals today"; continue; }
-    const ot = f.filter(a => Math.round((new Date(a.TimeAtLocation)-new Date(a.AdvertisedTimeAtLocation))/60000)<=5);
-    const pct = Math.round(ot.length/f.length*100);
-    el.textContent = pct+"% "+(lang==="sv"?"i tid idag":"on time today");
+    // Use resolved on-chain market outcomes (oracle-verified arrival data)
+    const mkts = allMarkets.filter(m => m.date===today && m.outcome!==0 && m.trainId.endsWith(" "+sig));
+    if (!mkts.length) { el.textContent = lang==="sv"?"Inga avgjorda marknader idag":"No resolved markets today"; continue; }
+    const onTime = mkts.filter(m => m.outcome===1);
+    const pct = Math.round(onTime.length/mkts.length*100);
+    el.textContent = pct+"% "+(lang==="sv"?"i tid idag ("+ mkts.length +" tåg)":"on time today ("+ mkts.length +" trains)");
     el.style.background = pct>=70?"rgba(34,197,94,.12)":pct>=50?"rgba(245,158,11,.12)":"rgba(239,68,68,.12)";
     el.style.color = pct>=70?"var(--green)":pct>=50?"var(--yellow)":"var(--red)";
   }
@@ -814,12 +834,12 @@ function renderAllTabs() {
   updateStats();
   if (activeTab==="marknader") renderMarkets();
   else if (activeTab==="profil") renderProfile();
-  else if (activeTab==="stationer") updateStationStats(tickerCache);
+  else if (activeTab==="stationer") updateStationStats();
 }
 
 function renderMarkets() {
   const n = nowSec();
-  const today = new Date().toLocaleDateString("sv-SE"); // YYYY-MM-DD in Swedish locale = local date
+  const today = new Date().toISOString().slice(0,10);
   const filters = {
     open:     m => m.outcome===0 && m.closingTime>n && m.date===today,
     pending:  m => m.outcome===0 && m.closingTime<=n && m.date===today,
@@ -986,6 +1006,15 @@ function showAlert(msg, err) {
   el.style.display = "block";
 }
 
+function showToast(msg, ok=true) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.style.color = ok ? "var(--green)" : "var(--red)";
+  el.style.display = "block";
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { el.style.display = "none"; }, 3500);
+}
+
 async function doApprove() {
   const btn = document.getElementById("btn-approve");
   document.getElementById("modal-alert").style.display = "none";
@@ -995,6 +1024,11 @@ async function doApprove() {
     btn.textContent = "⏳ "+(lang==="sv"?"Godkänner…":"Approving…");
     btn.disabled = true;
     const usdc = new ethers.Contract(USDC_ADDR, USDC_ABI, signer);
+    const balance = await usdc.balanceOf(account);
+    if (balance < units) {
+      btn.textContent = t("approveBtn"); btn.disabled = false;
+      showAlert(lang==="sv"?"Otillräckligt USDC-saldo":"Insufficient USDC balance", true); return;
+    }
     await (await usdc.approve(CONTRACT, units)).wait();
     btn.textContent = "✅ "+(lang==="sv"?"Godkänt":"Approved");
     document.getElementById("btn-bet").disabled = false;
@@ -1030,9 +1064,9 @@ async function claimWinnings(marketId) {
   try {
     const c = new ethers.Contract(CONTRACT, ABI, signer);
     await (await c.claimWinnings(BigInt(marketId))).wait();
-    alert(lang==="sv"?"Vinster hämtade! 🎉":"Winnings claimed! 🎉");
+    showToast(lang==="sv"?"Vinster hämtade! 🎉":"Winnings claimed! 🎉", true);
     init();
-  } catch(err) { alert(err.reason||err.message||"Failed."); }
+  } catch(err) { showToast(err.reason||err.message||"Failed.", false); }
 }
 
 // ═══ PWA ══════════════════════════════════════════════════════
@@ -1053,15 +1087,18 @@ document.getElementById("btn-wallet").addEventListener("click", connectWallet);
 
 document.getElementById("btn-lang").addEventListener("click", () => {
   lang = lang==="sv" ? "en" : "sv";
+  localStorage.setItem("lang", lang);
   applyLang();
   renderAllTabs();
   renderTicker(tickerCache);
-  updateStationStats(tickerCache);
+  updateStationStats();
 });
 
 document.getElementById("btn-dark").addEventListener("click", () => {
   document.body.classList.toggle("light");
-  document.getElementById("btn-dark").textContent = document.body.classList.contains("light") ? "🌙" : "☀️";
+  const isLight = document.body.classList.contains("light");
+  document.getElementById("btn-dark").textContent = isLight ? "🌙" : "☀️";
+  localStorage.setItem("theme", isLight ? "light" : "dark");
 });
 
 document.querySelectorAll(".tab-btn").forEach(btn =>
@@ -1101,7 +1138,10 @@ if (window.ethereum) {
 }
 
 // ═══ INIT ══════════════════════════════════════════════════════
+let _initRunning = false;
 async function init() {
+  if (_initRunning) return;
+  _initRunning = true;
   document.getElementById("markets-container").innerHTML =
     `<div class="loading"><div class="spinner"></div>${t("loading")}</div>`;
   try {
@@ -1111,10 +1151,17 @@ async function init() {
   } catch(err) {
     document.getElementById("markets-container").innerHTML =
       `<div class="empty">⚠️ ${lang==="sv"?"Kunde inte ladda marknader.":"Failed to load markets."}<br><small>${err.message}</small></div>`;
+  } finally {
+    _initRunning = false;
   }
 }
 
 applyLang();
+// Restore saved theme
+if (localStorage.getItem("theme") === "light") {
+  document.body.classList.add("light");
+  document.getElementById("btn-dark").textContent = "🌙";
+}
 init();
 refreshTicker();
 setInterval(init, 120_000);
