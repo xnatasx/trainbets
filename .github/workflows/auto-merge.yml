@@ -1,27 +1,35 @@
 name: Auto-merge Claude PRs
 
-# Automatically merges any PR opened from a claude/* branch.
-# This lets the Claude Code web assistant push changes without manual PR review.
+# When Claude Code pushes to a claude/* branch, automatically create a PR
+# and immediately merge it to main — no human action required.
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
+  push:
+    branches:
+      - 'claude/**'
 
 jobs:
   auto-merge:
-    if: startsWith(github.head_ref, 'claude/')
     runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: write
 
     steps:
-      - name: Merge PR
+      - name: Create PR and merge into main
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh pr merge "${{ github.event.pull_request.number }}" \
+          # Create PR (suppress error if one already exists for this branch)
+          gh pr create \
+            --repo "${{ github.repository }}" \
+            --head "${{ github.ref_name }}" \
+            --base main \
+            --title "Auto: ${{ github.ref_name }}" \
+            --body "Automated changes from Claude Code" 2>/dev/null || true
+
+          # Merge the open PR for this branch (squash + delete branch)
+          gh pr merge "${{ github.ref_name }}" \
             --repo "${{ github.repository }}" \
             --squash \
-            --admin \
             --delete-branch

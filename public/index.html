@@ -748,27 +748,27 @@ function updateStats() {
 }
 
 // ═══ TRAFIKVERKET TICKER ══════════════════════════════════════
+// Fetches departures from Stockholm Cst, filters for our 4 destinations
+const DEST_SIGS = new Set(["G","M","Son","U"]);
+
 async function refreshTicker() {
   try {
-    // Use Swedish local date (CET/CEST) so the date matches what Trafikverket serves
-    const today = new Date().toLocaleDateString("sv-SE");
     const res = await fetch(TV_PROXY, {
       method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({
-        objectType:"TrainAnnouncement",
-        filter:{AND:[
-          {EQ:[{name:"ActivityType",            value:"Avgang"}]},
-          {EQ:[{name:"LocationSignature",       value:"Cst"}]},
-          {IN:[{name:"ToLocation.LocationName", value:["G","M","Son","U"]}]},
-          {GT:[{name:"AdvertisedTimeAtLocation", value:today+"T00:00:00.000+01:00"}]},
-          {LT:[{name:"AdvertisedTimeAtLocation", value:today+"T23:59:59.000+01:00"}]},
-        ]},
-        includes:["AdvertisedTrainIdent","AdvertisedTimeAtLocation","TimeAtLocation","ToLocation","Canceled"],
-        limit: 50
-      })
+      body: JSON.stringify({station:"Cst", type:"Avgang"})
     });
     const data = await res.json();
-    const arr  = data?.RESPONSE?.RESULT?.[0]?.TrainAnnouncement ?? [];
+    if (!res.ok) {
+      console.warn("[Ticker] Proxy error", res.status, data);
+      document.getElementById("ticker-content").innerHTML =
+        `<span class="ticker-item" style="color:#f87171">⚠ Proxy ${res.status}: ${(data?.error||"").slice(0,200)}</span>`;
+      return;
+    }
+    // Filter to only trains heading to one of our 4 destination stations
+    const all = data?.trains ?? [];
+    const arr = all.filter(t => DEST_SIGS.has(t.toStation) ||
+                                (t.toLocations ?? []).some(l => DEST_SIGS.has(l)));
+    console.log("[Ticker] departures from Cst:", all.length, "→ filtered:", arr.length);
     tickerCache = arr;
     renderTicker(arr);
     updateStationStats();
@@ -783,24 +783,23 @@ function renderTicker(arr) {
       `<span class="ticker-item"><span style="color:var(--muted)">●</span> ${lang==="sv"?"Inga tågdata tillgängliga just nu":"No train data available right now"}</span>`;
     return;
   }
-  const DEST_SIGS = ["G","M","Son","U"];
-  const items = arr.slice(0,20).map(a => {
-    const destSig = a.ToLocation?.find(l => DEST_SIGS.includes(l.LocationName))?.LocationName;
+  const items = arr.slice(0,20).map(t => {
+    const destSig = t.toStation || (t.toLocations ?? []).find(l => DEST_SIGS.has(l)) || "";
     const d = DEST[destSig] || {sv:destSig||"?",en:destSig||"?"};
     const dest = d[lang]||d.sv;
-    const sched = new Date(a.AdvertisedTimeAtLocation);
-    const schedStr = sched.toLocaleTimeString("sv-SE",{hour:"2-digit",minute:"2-digit"});
+    const schedStr = new Date(t.scheduledTime).toLocaleTimeString("sv-SE",{hour:"2-digit",minute:"2-digit"});
     let dot="🟡", status;
-    if (a.Canceled) {
+    if (t.canceled) {
       dot="🔴"; status = lang==="sv"?"Inställt":"Cancelled";
-    } else if (a.TimeAtLocation) {
-      const delay = Math.round((new Date(a.TimeAtLocation)-sched)/60000);
-      dot = delay<=5?"🟢":"🔴";
-      status = delay<=5 ? (lang==="sv"?"I tid":"On time") : "+"+delay+" min";
+    } else if (t.actualTime) {
+      dot = t.delay<=5?"🟢":"🔴";
+      status = t.delay<=5 ? (lang==="sv"?"I tid":"On time") : "+"+t.delay+" min";
+    } else if (t.delay>0) {
+      dot="🟡"; status = "+"+t.delay+" min (est.)";
     } else {
       status = lang==="sv"?"Väntas":"Expected";
     }
-    return `<span class="ticker-item">${dot} ${a.AdvertisedTrainIdent} Stockholm→${dest} · ${schedStr} · <strong>${status}</strong></span>`;
+    return `<span class="ticker-item">${dot} ${t.trainId} Stockholm→${dest} · ${schedStr} · <strong>${status}</strong></span>`;
   });
   const html = items.join("")+items.join("");
   document.getElementById("ticker-content").innerHTML = html;

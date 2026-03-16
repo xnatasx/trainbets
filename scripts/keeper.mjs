@@ -40,25 +40,25 @@ async function fetchDepartures(apiKey) {
   const today = new Date().toISOString().slice(0, 10);
   const res = await tvFetch(apiKey, "TrainAnnouncement", {
     AND: [
-      { EQ: [{ name: "ActivityType",             value: "Avgang"                      }] },
-      { EQ: [{ name: "LocationSignature",        value: "Cst"                         }] },
-      { IN: [{ name: "ToLocation.LocationName",  value: DEST_SIGS                     }] },
-      { GT: [{ name: "AdvertisedTimeAtLocation", value: today + "T00:00:00.000+01:00" }] },
-      { LT: [{ name: "AdvertisedTimeAtLocation", value: today + "T23:59:59.000+01:00" }] },
+      { EQ:   [{ name: "ActivityType",             value: "Avgang"                      }] },
+      { EQ:   [{ name: "LocationSignature",        value: "Cst"                         }] },
+      { GT:   [{ name: "AdvertisedTimeAtLocation", value: today + "T00:00:00.000+01:00" }] },
+      { LT:   [{ name: "AdvertisedTimeAtLocation", value: today + "T23:59:59.000+01:00" }] },
     ],
-  }, ["AdvertisedTrainIdent", "AdvertisedTimeAtLocation", "Canceled", "ToLocation"]);
+  }, "AdvertisedTrainIdent,AdvertisedTimeAtLocation,Canceled,ToLocation");
   return res.TrainAnnouncement ?? [];
 }
 
 async function fetchArrival(apiKey, trainIdent, destSig, departureDate) {
   const res = await tvFetch(apiKey, "TrainAnnouncement", {
     AND: [
-      { EQ:   [{ name: "ActivityType",               value: "Ankomst"           }] },
-      { EQ:   [{ name: "AdvertisedTrainIdent",       value: trainIdent          }] },
-      { EQ:   [{ name: "LocationSignature",          value: destSig             }] },
-      { LIKE: [{ name: "ScheduledDepartureDateTime", value: departureDate + "%" }] },
+      { EQ: [{ name: "ActivityType",               value: "Ankomst"                             }] },
+      { EQ: [{ name: "AdvertisedTrainIdent",       value: trainIdent                            }] },
+      { EQ: [{ name: "LocationSignature",          value: destSig                               }] },
+      { GT: [{ name: "ScheduledDepartureDateTime", value: departureDate + "T00:00:00.000+01:00" }] },
+      { LT: [{ name: "ScheduledDepartureDateTime", value: departureDate + "T23:59:59.000+01:00" }] },
     ],
-  }, ["TimeAtLocation", "AdvertisedTimeAtLocation", "Canceled"]);
+  }, "TimeAtLocation,AdvertisedTimeAtLocation,Canceled");
   const ann = res.TrainAnnouncement?.[0];
   if (!ann) return { arrived: false, delayMinutes: 0, cancelled: false };
   const delay = ann.TimeAtLocation
@@ -128,7 +128,9 @@ async function run() {
   console.log(`[Keeper] Created ${created} markets`);
 
   // — Resolve expired markets —
-  const toResolve = mkts.filter(m => m.outcome === Outcome.Unresolved && m.closingTime <= now);
+  const toResolve = mkts.filter(m => m.outcome === Outcome.Unresolved &&
+                                    m.closingTime <= now &&
+                                    m.closingTime >= now - 48 * 3600); // skip markets older than 48 h
   console.log(`[Keeper] ${toResolve.length} markets to resolve`);
   let resolved = 0;
 
