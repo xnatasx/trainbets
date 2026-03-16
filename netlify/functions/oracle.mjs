@@ -35,25 +35,25 @@ async function fetchTodayDepartures(apiKey) {
   const today = new Date().toISOString().slice(0, 10);
   const res = await tvFetch(apiKey, "TrainAnnouncement", {
     AND: [
-      { EQ: [{ name: "ActivityType",             value: "Avgang"                      }] },
-      { EQ: [{ name: "LocationSignature",        value: "Cst"                         }] },
-      { IN: [{ name: "ToLocation.LocationName",  value: DEST_SIGNATURES               }] },
-      { GT: [{ name: "AdvertisedTimeAtLocation", value: today + "T00:00:00.000+01:00" }] },
-      { LT: [{ name: "AdvertisedTimeAtLocation", value: today + "T23:59:59.000+01:00" }] },
+      { EQ:   [{ name: "ActivityType",             value: "Avgang"                      }] },
+      { EQ:   [{ name: "LocationSignature",        value: "Cst"                         }] },
+      { GT:   [{ name: "AdvertisedTimeAtLocation", value: today + "T00:00:00.000+01:00" }] },
+      { LT:   [{ name: "AdvertisedTimeAtLocation", value: today + "T23:59:59.000+01:00" }] },
     ],
-  }, ["AdvertisedTrainIdent", "AdvertisedTimeAtLocation", "Canceled", "ToLocation"]);
+  }, "AdvertisedTrainIdent,AdvertisedTimeAtLocation,Canceled,ToLocation");
   return res.TrainAnnouncement ?? [];
 }
 
 async function fetchArrivalStatus(apiKey, trainIdent, destSig, departureDate) {
   const res = await tvFetch(apiKey, "TrainAnnouncement", {
     AND: [
-      { EQ:   [{ name: "ActivityType",               value: "Ankomst"           }] },
-      { EQ:   [{ name: "AdvertisedTrainIdent",       value: trainIdent          }] },
-      { EQ:   [{ name: "LocationSignature",          value: destSig             }] },
-      { LIKE: [{ name: "ScheduledDepartureDateTime", value: departureDate + "%" }] },
+      { EQ: [{ name: "ActivityType",               value: "Ankomst"                               }] },
+      { EQ: [{ name: "AdvertisedTrainIdent",       value: trainIdent                              }] },
+      { EQ: [{ name: "LocationSignature",          value: destSig                                 }] },
+      { GT: [{ name: "ScheduledDepartureDateTime", value: departureDate + "T00:00:00.000+01:00"   }] },
+      { LT: [{ name: "ScheduledDepartureDateTime", value: departureDate + "T23:59:59.000+01:00"   }] },
     ],
-  }, ["TimeAtLocation", "AdvertisedTimeAtLocation", "Canceled"]);
+  }, "TimeAtLocation,AdvertisedTimeAtLocation,Canceled");
   const ann = res.TrainAnnouncement?.[0];
   if (!ann) return { arrived: false, delayMinutes: 0, cancelled: false };
   const cancelled    = ann.Canceled === true;
@@ -111,7 +111,9 @@ async function resolveMarkets(contract, apiKey) {
   );
   const allMkts = settled2.map((r, i) => r.status !== 'fulfilled' ? null : { trainId: r.value.trainId, departureDate: r.value.departureDate, closingTime: r.value.closingTime, outcome: r.value.outcome, totalYes: r.value.totalYes, totalNo: r.value.totalNo, marketId: i + 1 }).filter(Boolean);
   const toResolve = allMkts
-    .filter(m => Number(m.outcome) === Outcome.Unresolved && Number(m.closingTime) <= now);
+    .filter(m => Number(m.outcome) === Outcome.Unresolved &&
+                 Number(m.closingTime) <= now &&
+                 Number(m.closingTime) >= now - 48 * 3600); // skip markets older than 48 h
   console.log(toResolve.length + " markets need resolving");
   let resolved = 0;
   for (const m of toResolve) {
