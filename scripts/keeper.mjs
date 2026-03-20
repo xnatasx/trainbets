@@ -7,6 +7,13 @@ const DEST_SIGS = ["G", "M", "Son", "U"];
 const DELAY_THRESHOLD = 5; // minutes
 const Outcome = { Unresolved: 0, OnTime: 1, Delayed: 2 };
 
+function getStockholmDate() {
+  const now = new Date();
+  const date = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Stockholm" }).format(now);
+  const isCEST = new Intl.DateTimeFormat("en-US", { timeZone: "Europe/Stockholm", timeZoneName: "short" }).format(now).includes("CEST");
+  return { date, tz: isCEST ? "+02:00" : "+01:00" };
+}
+
 const ABI = [
   "function marketCount() view returns (uint256)",
   "function markets(uint256) view returns (string trainId, string departureDate, uint256 closingTime, uint8 outcome, uint256 totalYes, uint256 totalNo)",
@@ -37,15 +44,15 @@ async function tvFetch(apiKey, objecttype, filter, includes, limit = 1000) {
 }
 
 async function fetchDepartures(apiKey) {
-  const today = new Date().toISOString().slice(0, 10);
+  const { date: today, tz } = getStockholmDate();
   const res = await tvFetch(apiKey, "TrainAnnouncement", {
     AND: [
       { EQ:   [{ name: "ActivityType",             value: "Avgang"                      }] },
       { EQ:   [{ name: "LocationSignature",        value: "Cst"                         }] },
-      { GT:   [{ name: "AdvertisedTimeAtLocation", value: today + "T00:00:00.000+01:00" }] },
-      { LT:   [{ name: "AdvertisedTimeAtLocation", value: today + "T23:59:59.000+01:00" }] },
+      { GT:   [{ name: "AdvertisedTimeAtLocation", value: today + "T00:00:00.000" + tz  }] },
+      { LT:   [{ name: "AdvertisedTimeAtLocation", value: today + "T23:59:59.000" + tz  }] },
     ],
-  }, "AdvertisedTrainIdent,AdvertisedTimeAtLocation,Canceled,ToLocation");
+  }, ["AdvertisedTrainIdent", "AdvertisedTimeAtLocation", "Canceled", "ToLocation"]);
   return res.TrainAnnouncement ?? [];
 }
 
@@ -58,7 +65,7 @@ async function fetchArrival(apiKey, trainIdent, destSig, departureDate) {
       { GT: [{ name: "ScheduledDepartureDateTime", value: departureDate + "T00:00:00.000+01:00" }] },
       { LT: [{ name: "ScheduledDepartureDateTime", value: departureDate + "T23:59:59.000+01:00" }] },
     ],
-  }, "TimeAtLocation,AdvertisedTimeAtLocation,Canceled");
+  }, ["TimeAtLocation", "AdvertisedTimeAtLocation", "Canceled"]);
   const ann = res.TrainAnnouncement?.[0];
   if (!ann) return { arrived: false, delayMinutes: 0, cancelled: false };
   const delay = ann.TimeAtLocation
@@ -81,7 +88,7 @@ async function run() {
   const contract = new ethers.Contract(contractAddress, ABI, wallet);
 
   console.log(`[Keeper] Wallet: ${wallet.address}`);
-  const today = new Date().toISOString().slice(0, 10);
+  const { date: today } = getStockholmDate();
   const now   = Math.floor(Date.now() / 1000);
 
   // — Load existing markets —

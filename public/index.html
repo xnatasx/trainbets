@@ -733,7 +733,7 @@ async function loadUserBets(markets) {
 // ═══ STATS ════════════════════════════════════════════════════
 function updateStats() {
   const n     = nowSec();
-  const today = new Date().toISOString().slice(0,10);
+  const today = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Stockholm" }).format(new Date());
   const open  = allMarkets.filter(m => m.outcome===0 && m.closingTime>n);
   // Only count today's markets for volume + on-time % so we don't show all-time accumulated totals
   const todayMkts = allMarkets.filter(m => (m.date||"").startsWith(today));
@@ -808,7 +808,7 @@ function renderTicker(arr) {
 }
 
 function updateStationStats() {
-  const today = new Date().toISOString().slice(0,10);
+  const today = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Stockholm" }).format(new Date());
   const sigs = {G:"g",M:"m",Son:"son",U:"u"};
   for (const [sig,id] of Object.entries(sigs)) {
     const el = document.getElementById(id+"-stat");
@@ -834,7 +834,7 @@ function renderAllTabs() {
 
 function renderMarkets() {
   const n = nowSec();
-  const today = new Date().toISOString().slice(0,10);
+  const today = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Stockholm" }).format(new Date());
   const filters = {
     open:     m => m.outcome===0 && m.closingTime>n && m.date===today,
     pending:  m => m.outcome===0 && m.closingTime<=n && m.date===today,
