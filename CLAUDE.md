@@ -52,7 +52,7 @@ trainbets/
 These values appear in multiple files — keep them consistent:
 
 ```
-CONTRACT_ADDRESS = 0xB54bCee43ACad2c99e59Bc89f19823181DA4ceF9  (Base mainnet)
+CONTRACT_ADDRESS = 0xa0caaed5d619dca906170eb01540d893117b73a5  (Base mainnet)
 USDC_ADDRESS     = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913  (Base USDC)
 CHAIN_ID         = 8453
 USDC_DECIMALS    = 6
@@ -104,7 +104,7 @@ User Browser (index.html)
   │       └─→ Trafikverket API (train schedule data)
   │
   └─→ Base Blockchain (ethers.js via MetaMask/Rabby)
-          └─→ Smart Contract 0xB54bCee...
+          └─→ Smart Contract 0xa0caae...
                   ↑
          Oracle / Keeper (two systems, same logic)
             ├── Netlify oracle.mjs  (1-min cron via scheduled function)
@@ -260,7 +260,7 @@ Check Netlify Function logs in the Netlify dashboard, or trigger the GitHub Acti
 
 | Resource | URL |
 |---|---|
-| Smart Contract (Basescan) | https://basescan.org/address/0xB54bCee43ACad2c99e59Bc89f19823181DA4ceF9 |
+| Smart Contract (Basescan) | https://basescan.org/address/0xa0caaed5d619dca906170eb01540d893117b73a5 |
 | Base blockchain | https://base.org |
 | Trafikverket API docs | https://api.trafikinfo.trafikverket.se |
 | USDC on Base | https://basescan.org/token/0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913 |
