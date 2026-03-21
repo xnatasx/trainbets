@@ -16,7 +16,7 @@ function getStockholmDate() {
 
 const CONTRACT_ABI = [
   "function marketCount() view returns (uint256)",
-  "function markets(uint256) view returns (string trainId, string departureDate, uint256 closingTime, uint8 outcome, uint256 totalYes, uint256 totalNo)",
+  "function getMarket(uint256) view returns (tuple(string trainId, string departureDate, uint256 closingTime, uint8 outcome, uint256 totalYes, uint256 totalNo))",
   "function createMarket(string calldata trainId, string calldata departureDate, uint256 closingTime) external returns (uint256)",
   "function resolveMarket(uint256 marketId, uint8 outcome) external",
 ];
@@ -40,25 +40,30 @@ async function tvFetch(apiKey, objecttype, filter, includes, limit = 1000) {
 
 async function fetchTodayDepartures(apiKey) {
   const { date: today, tz } = getStockholmDate();
-  const res = await tvFetch(apiKey, "TrainAnnouncement", {
+  const tomorrowDt = new Date(Date.now() + 86400000);
+  const tomorrow = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Stockholm" }).format(tomorrowDt);
+  const fetchDay = (date) => tvFetch(apiKey, "TrainAnnouncement", {
     AND: [
-      { EQ:   [{ name: "ActivityType",             value: "Avgang"                      }] },
-      { EQ:   [{ name: "LocationSignature",        value: "Cst"                         }] },
-      { GT:   [{ name: "AdvertisedTimeAtLocation", value: today + "T00:00:00.000" + tz  }] },
-      { LT:   [{ name: "AdvertisedTimeAtLocation", value: today + "T23:59:59.000" + tz  }] },
+      { EQ:   [{ name: "ActivityType",             value: "Avgang"                     }] },
+      { EQ:   [{ name: "LocationSignature",        value: "Cst"                        }] },
+      { GT:   [{ name: "AdvertisedTimeAtLocation", value: date + "T00:00:00.000" + tz  }] },
+      { LT:   [{ name: "AdvertisedTimeAtLocation", value: date + "T23:59:59.000" + tz  }] },
     ],
-  }, ["AdvertisedTrainIdent", "AdvertisedTimeAtLocation", "Canceled", "ToLocation"]);
-  return res.TrainAnnouncement ?? [];
+  }, ["AdvertisedTrainIdent", "AdvertisedTimeAtLocation", "Canceled", "ToLocation"])
+    .then(res => res.TrainAnnouncement ?? []);
+  const [todayTrains, tomorrowTrains] = await Promise.all([fetchDay(today), fetchDay(tomorrow)]);
+  return [...todayTrains, ...tomorrowTrains];
 }
 
 async function fetchArrivalStatus(apiKey, trainIdent, destSig, departureDate) {
+  const { tz } = getStockholmDate();
   const res = await tvFetch(apiKey, "TrainAnnouncement", {
     AND: [
-      { EQ: [{ name: "ActivityType",               value: "Ankomst"                               }] },
-      { EQ: [{ name: "AdvertisedTrainIdent",       value: trainIdent                              }] },
-      { EQ: [{ name: "LocationSignature",          value: destSig                                 }] },
-      { GT: [{ name: "ScheduledDepartureDateTime", value: departureDate + "T00:00:00.000+01:00"   }] },
-      { LT: [{ name: "ScheduledDepartureDateTime", value: departureDate + "T23:59:59.000+01:00"   }] },
+      { EQ: [{ name: "ActivityType",               value: "Ankomst"                              }] },
+      { EQ: [{ name: "AdvertisedTrainIdent",       value: trainIdent                             }] },
+      { EQ: [{ name: "LocationSignature",          value: destSig                                }] },
+      { GT: [{ name: "ScheduledDepartureDateTime", value: departureDate + "T00:00:00.000" + tz   }] },
+      { LT: [{ name: "ScheduledDepartureDateTime", value: departureDate + "T23:59:59.000" + tz   }] },
     ],
   }, ["TimeAtLocation", "AdvertisedTimeAtLocation", "Canceled"]);
   const ann = res.TrainAnnouncement?.[0];
@@ -77,29 +82,29 @@ async function createMarkets(contract, apiKey) {
   console.log('TV API returned', trains.length, 'departures');
   const now    = Date.now();
   const cutoff = now + MARKET_LOOKAHEAD_HOURS * 3600000;
-  const { date: today } = getStockholmDate();
   let count = 0;
   try { count = Number(await contract.marketCount()); } catch(e) { console.error('marketCount err: ' + e.message); return; }
   const settled1 = await Promise.allSettled(
-    Array.from({ length: count }, (_, i) => contract.markets(i + 1))
+    Array.from({ length: count }, (_, i) => contract.getMarket(i + 1))
   );
   const allMkts = settled1.map(r => r.status === 'fulfilled' ? r.value : null).filter(Boolean);
   const existing = new Set(allMkts.map(m => m.trainId + "|" + m.departureDate));
   let created = 0;
   for (const train of trains) {
     const deptMs = new Date(train.AdvertisedTimeAtLocation).getTime();
-    if (deptMs < now || deptMs > cutoff) continue;
+    if (deptMs < now + 1800000 || deptMs > cutoff) continue; // skip if closing time (30 min before departure) already passed
     const dest = train.ToLocation?.find(l => DEST_SIGNATURES.includes(l.LocationName))?.LocationName;
     if (!dest) continue;
     const trainId = train.AdvertisedTrainIdent + " " + dest;
-    if (existing.has(trainId + "|" + today)) continue;
+    const deptDate = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Stockholm" }).format(new Date(deptMs));
+    if (existing.has(trainId + "|" + deptDate)) continue;
     try {
       const tx = await contract.createMarket(
-        trainId, today, Math.floor(deptMs / 1000) + 1800, BASE_GAS
+        trainId, deptDate, Math.floor(deptMs / 1000) - 1800, BASE_GAS
       );
       await tx.wait();
       console.log("Created: " + trainId);
-      existing.add(trainId + "|" + today);
+      existing.add(trainId + "|" + deptDate);
       created++;
     } catch (err) {
       console.error("Failed to create " + trainId + ": " + err.message);
@@ -114,7 +119,7 @@ async function resolveMarkets(contract, apiKey) {
   try { count = Number(await contract.marketCount()); } catch(e) { console.error('marketCount err: ' + e.message); return; }
   const now     = Math.floor(Date.now() / 1000);
   const settled2 = await Promise.allSettled(
-    Array.from({ length: count }, (_, i) => contract.markets(i + 1))
+    Array.from({ length: count }, (_, i) => contract.getMarket(i + 1))
   );
   const allMkts = settled2.map((r, i) => r.status !== 'fulfilled' ? null : { trainId: r.value.trainId, departureDate: r.value.departureDate, closingTime: r.value.closingTime, outcome: r.value.outcome, totalYes: r.value.totalYes, totalNo: r.value.totalNo, marketId: i + 1 }).filter(Boolean);
   const toResolve = allMkts

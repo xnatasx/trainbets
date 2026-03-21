@@ -52,7 +52,8 @@ trainbets/
 These values appear in multiple files — keep them consistent:
 
 ```
-CONTRACT_ADDRESS = 0xa0caaed5d619dca906170eb01540d893117b73a5  (Base mainnet)
+CONTRACT_ADDRESS = 0xb54bcee43acad2c99e59bc89f19823181da4cef9  (Base mainnet)
+OWNER_ADDRESS    = 0xA0CaAEd5D619dCA906170eB01540d893117B73a5  (treasury/keeper wallet, contract owner)
 USDC_ADDRESS     = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913  (Base USDC)
 CHAIN_ID         = 8453
 USDC_DECIMALS    = 6
@@ -149,7 +150,13 @@ Both `oracle.mjs` and `keeper.mjs` perform two jobs on each run:
 1. **createMarkets()** — fetch departures from Trafikverket, create on-chain markets for qualifying trains not yet tracked.
 2. **resolveMarkets()** — query open markets past their closing time, fetch actual arrival data, resolve on-chain.
 
-**ethers.js v6 note:** `contract.markets(id)` returns an `ethers.Result` object. Access fields by name (e.g., `result.outcome`) not by numeric index. This has caused bugs before — be careful when reading contract results.
+**ethers.js v6 note:** The contract exposes `getMarket(uint256)` (not a public `markets` mapping). It returns a **Solidity struct** (`Market memory`), which ABI-encodes with an outer `0x20` offset wrapper. The ABI must declare it with `tuple(...)` so ethers.js decodes correctly:
+```javascript
+"function getMarket(uint256) view returns (tuple(string trainId, string departureDate, uint256 closingTime, uint8 outcome, uint256 totalYes, uint256 totalNo))"
+```
+Without `tuple(...)`, the outer offset is misread as `closingTime`, making all market reads return garbage. Access fields by name (e.g., `result.trainId`) — this works because ethers.js unwraps the single return value automatically.
+
+**Tomorrow fetching:** Both oracles fetch today AND tomorrow departures from Trafikverket, then filter by the per-train Stockholm departure date. This handles overnight trains that depart near midnight — their `departureDate` is computed from the actual `AdvertisedTimeAtLocation` timestamp, not from a global "today" variable.
 
 **Gas settings:**
 ```javascript
@@ -260,7 +267,7 @@ Check Netlify Function logs in the Netlify dashboard, or trigger the GitHub Acti
 
 | Resource | URL |
 |---|---|
-| Smart Contract (Basescan) | https://basescan.org/address/0xa0caaed5d619dca906170eb01540d893117b73a5 |
+| Smart Contract (Basescan) | https://basescan.org/address/0xb54bcee43acad2c99e59bc89f19823181da4cef9 |
 | Base blockchain | https://base.org |
 | Trafikverket API docs | https://api.trafikinfo.trafikverket.se |
 | USDC on Base | https://basescan.org/token/0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913 |
