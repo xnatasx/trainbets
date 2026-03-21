@@ -150,7 +150,13 @@ Both `oracle.mjs` and `keeper.mjs` perform two jobs on each run:
 1. **createMarkets()** — fetch departures from Trafikverket, create on-chain markets for qualifying trains not yet tracked.
 2. **resolveMarkets()** — query open markets past their closing time, fetch actual arrival data, resolve on-chain.
 
-**ethers.js v6 note:** `contract.markets(id)` returns an `ethers.Result` object. Access fields by name (e.g., `result.outcome`) not by numeric index. This has caused bugs before — be careful when reading contract results.
+**ethers.js v6 note:** The contract exposes `getMarket(uint256)` (not a public `markets` mapping). It returns a **Solidity struct** (`Market memory`), which ABI-encodes with an outer `0x20` offset wrapper. The ABI must declare it with `tuple(...)` so ethers.js decodes correctly:
+```javascript
+"function getMarket(uint256) view returns (tuple(string trainId, string departureDate, uint256 closingTime, uint8 outcome, uint256 totalYes, uint256 totalNo))"
+```
+Without `tuple(...)`, the outer offset is misread as `closingTime`, making all market reads return garbage. Access fields by name (e.g., `result.trainId`) — this works because ethers.js unwraps the single return value automatically.
+
+**Tomorrow fetching:** Both oracles fetch today AND tomorrow departures from Trafikverket, then filter by the per-train Stockholm departure date. This handles overnight trains that depart near midnight — their `departureDate` is computed from the actual `AdvertisedTimeAtLocation` timestamp, not from a global "today" variable.
 
 **Gas settings:**
 ```javascript
