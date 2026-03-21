@@ -16,7 +16,7 @@ function getStockholmDate() {
 
 const ABI = [
   "function marketCount() view returns (uint256)",
-  "function markets(uint256) view returns (string trainId, string departureDate, uint256 closingTime, uint8 outcome, uint256 totalYes, uint256 totalNo)",
+  "function getMarket(uint256) view returns (tuple(string trainId, string departureDate, uint256 closingTime, uint8 outcome, uint256 totalYes, uint256 totalNo))",
   "function createMarket(string calldata trainId, string calldata departureDate, uint256 closingTime) external returns (uint256)",
   "function resolveMarket(uint256 marketId, uint8 outcome) external",
 ];
@@ -100,7 +100,7 @@ async function run() {
   try { count = Number(await contract.marketCount()); }
   catch (err) { console.error("[Keeper] Failed to read marketCount:", err.message); process.exit(1); }
   const mkts  = (await Promise.allSettled(
-    Array.from({ length: count }, (_, i) => contract.markets(i + 1))
+    Array.from({ length: count }, (_, i) => contract.getMarket(i + 1))
   )).map((r, i) => r.status === "fulfilled"
     ? { trainId: r.value.trainId, departureDate: r.value.departureDate,
         closingTime: Number(r.value.closingTime), outcome: Number(r.value.outcome),

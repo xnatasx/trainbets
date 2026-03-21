@@ -16,7 +16,7 @@ function getStockholmDate() {
 
 const CONTRACT_ABI = [
   "function marketCount() view returns (uint256)",
-  "function markets(uint256) view returns (string trainId, string departureDate, uint256 closingTime, uint8 outcome, uint256 totalYes, uint256 totalNo)",
+  "function getMarket(uint256) view returns (tuple(string trainId, string departureDate, uint256 closingTime, uint8 outcome, uint256 totalYes, uint256 totalNo))",
   "function createMarket(string calldata trainId, string calldata departureDate, uint256 closingTime) external returns (uint256)",
   "function resolveMarket(uint256 marketId, uint8 outcome) external",
 ];
@@ -85,7 +85,7 @@ async function createMarkets(contract, apiKey) {
   let count = 0;
   try { count = Number(await contract.marketCount()); } catch(e) { console.error('marketCount err: ' + e.message); return; }
   const settled1 = await Promise.allSettled(
-    Array.from({ length: count }, (_, i) => contract.markets(i + 1))
+    Array.from({ length: count }, (_, i) => contract.getMarket(i + 1))
   );
   const allMkts = settled1.map(r => r.status === 'fulfilled' ? r.value : null).filter(Boolean);
   const existing = new Set(allMkts.map(m => m.trainId + "|" + m.departureDate));
@@ -119,7 +119,7 @@ async function resolveMarkets(contract, apiKey) {
   try { count = Number(await contract.marketCount()); } catch(e) { console.error('marketCount err: ' + e.message); return; }
   const now     = Math.floor(Date.now() / 1000);
   const settled2 = await Promise.allSettled(
-    Array.from({ length: count }, (_, i) => contract.markets(i + 1))
+    Array.from({ length: count }, (_, i) => contract.getMarket(i + 1))
   );
   const allMkts = settled2.map((r, i) => r.status !== 'fulfilled' ? null : { trainId: r.value.trainId, departureDate: r.value.departureDate, closingTime: r.value.closingTime, outcome: r.value.outcome, totalYes: r.value.totalYes, totalNo: r.value.totalNo, marketId: i + 1 }).filter(Boolean);
   const toResolve = allMkts
