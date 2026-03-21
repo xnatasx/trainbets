@@ -88,14 +88,14 @@ async function createMarkets(contract, apiKey) {
   let created = 0;
   for (const train of trains) {
     const deptMs = new Date(train.AdvertisedTimeAtLocation).getTime();
-    if (deptMs < now || deptMs > cutoff) continue;
+    if (deptMs < now + 1800000 || deptMs > cutoff) continue; // skip if closing time (30 min before departure) already passed
     const dest = train.ToLocation?.find(l => DEST_SIGNATURES.includes(l.LocationName))?.LocationName;
     if (!dest) continue;
     const trainId = train.AdvertisedTrainIdent + " " + dest;
     if (existing.has(trainId + "|" + today)) continue;
     try {
       const tx = await contract.createMarket(
-        trainId, today, Math.floor(deptMs / 1000) + 1800, BASE_GAS
+        trainId, today, Math.floor(deptMs / 1000) - 1800, BASE_GAS
       );
       await tx.wait();
       console.log("Created: " + trainId);

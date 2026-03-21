@@ -115,14 +115,14 @@ async function run() {
   for (const train of trains) {
     const deptMs = new Date(train.AdvertisedTimeAtLocation).getTime();
     const deptSec = deptMs / 1000;
-    if (deptSec < now) { skipped.past++; continue; }
+    if (deptSec < now + 1800) { skipped.past++; continue; } // skip if closing time (30 min before departure) already passed
     if (deptSec > cutoff) { skipped.future++; continue; }
     const dest = train.ToLocation?.find(l => DEST_SIGS.includes(l.LocationName))?.LocationName;
     if (!dest) { skipped.dest++; continue; }
     const trainId = train.AdvertisedTrainIdent + " " + dest;
     if (existing.has(trainId + "|" + today)) { skipped.exists++; continue; }
     try {
-      const tx = await contract.createMarket(trainId, today, Math.floor(deptSec) + 1800, GAS);
+      const tx = await contract.createMarket(trainId, today, Math.floor(deptSec) - 1800, GAS);
       await tx.wait();
       console.log(`[Keeper] Created: ${trainId}`);
       existing.add(trainId + "|" + today);
