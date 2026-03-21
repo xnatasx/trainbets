@@ -45,25 +45,30 @@ async function tvFetch(apiKey, objecttype, filter, includes, limit = 1000) {
 
 async function fetchDepartures(apiKey) {
   const { date: today, tz } = getStockholmDate();
-  const res = await tvFetch(apiKey, "TrainAnnouncement", {
+  const tomorrowDt = new Date(Date.now() + 86400000);
+  const tomorrow = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Stockholm" }).format(tomorrowDt);
+  const fetchDay = (date) => tvFetch(apiKey, "TrainAnnouncement", {
     AND: [
-      { EQ:   [{ name: "ActivityType",             value: "Avgang"                      }] },
-      { EQ:   [{ name: "LocationSignature",        value: "Cst"                         }] },
-      { GT:   [{ name: "AdvertisedTimeAtLocation", value: today + "T00:00:00.000" + tz  }] },
-      { LT:   [{ name: "AdvertisedTimeAtLocation", value: today + "T23:59:59.000" + tz  }] },
+      { EQ:   [{ name: "ActivityType",             value: "Avgang"                     }] },
+      { EQ:   [{ name: "LocationSignature",        value: "Cst"                        }] },
+      { GT:   [{ name: "AdvertisedTimeAtLocation", value: date + "T00:00:00.000" + tz  }] },
+      { LT:   [{ name: "AdvertisedTimeAtLocation", value: date + "T23:59:59.000" + tz  }] },
     ],
-  }, ["AdvertisedTrainIdent", "AdvertisedTimeAtLocation", "Canceled", "ToLocation"]);
-  return res.TrainAnnouncement ?? [];
+  }, ["AdvertisedTrainIdent", "AdvertisedTimeAtLocation", "Canceled", "ToLocation"])
+    .then(res => res.TrainAnnouncement ?? []);
+  const [todayTrains, tomorrowTrains] = await Promise.all([fetchDay(today), fetchDay(tomorrow)]);
+  return [...todayTrains, ...tomorrowTrains];
 }
 
 async function fetchArrival(apiKey, trainIdent, destSig, departureDate) {
+  const { tz } = getStockholmDate();
   const res = await tvFetch(apiKey, "TrainAnnouncement", {
     AND: [
-      { EQ: [{ name: "ActivityType",               value: "Ankomst"                             }] },
-      { EQ: [{ name: "AdvertisedTrainIdent",       value: trainIdent                            }] },
-      { EQ: [{ name: "LocationSignature",          value: destSig                               }] },
-      { GT: [{ name: "ScheduledDepartureDateTime", value: departureDate + "T00:00:00.000+01:00" }] },
-      { LT: [{ name: "ScheduledDepartureDateTime", value: departureDate + "T23:59:59.000+01:00" }] },
+      { EQ: [{ name: "ActivityType",               value: "Ankomst"                            }] },
+      { EQ: [{ name: "AdvertisedTrainIdent",       value: trainIdent                           }] },
+      { EQ: [{ name: "LocationSignature",          value: destSig                              }] },
+      { GT: [{ name: "ScheduledDepartureDateTime", value: departureDate + "T00:00:00.000" + tz }] },
+      { LT: [{ name: "ScheduledDepartureDateTime", value: departureDate + "T23:59:59.000" + tz }] },
     ],
   }, ["TimeAtLocation", "AdvertisedTimeAtLocation", "Canceled"]);
   const ann = res.TrainAnnouncement?.[0];
@@ -88,7 +93,6 @@ async function run() {
   const contract = new ethers.Contract(contractAddress, ABI, wallet);
 
   console.log(`[Keeper] Wallet: ${wallet.address}`);
-  const { date: today } = getStockholmDate();
   const now   = Math.floor(Date.now() / 1000);
 
   // — Load existing markets —
@@ -120,12 +124,13 @@ async function run() {
     const dest = train.ToLocation?.find(l => DEST_SIGS.includes(l.LocationName))?.LocationName;
     if (!dest) { skipped.dest++; continue; }
     const trainId = train.AdvertisedTrainIdent + " " + dest;
-    if (existing.has(trainId + "|" + today)) { skipped.exists++; continue; }
+    const deptDate = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Stockholm" }).format(new Date(deptMs));
+    if (existing.has(trainId + "|" + deptDate)) { skipped.exists++; continue; }
     try {
-      const tx = await contract.createMarket(trainId, today, Math.floor(deptSec) - 1800, GAS);
+      const tx = await contract.createMarket(trainId, deptDate, Math.floor(deptSec) - 1800, GAS);
       await tx.wait();
       console.log(`[Keeper] Created: ${trainId}`);
-      existing.add(trainId + "|" + today);
+      existing.add(trainId + "|" + deptDate);
       created++;
     } catch (err) {
       console.error(`[Keeper] Create failed ${trainId}: ${err.message}`);
