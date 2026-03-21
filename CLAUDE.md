@@ -52,7 +52,7 @@ trainbets/
 These values appear in multiple files — keep them consistent:
 
 ```
-CONTRACT_ADDRESS = 0xa0caaed5d619dca906170eb01540d893117b73a5  (Base mainnet)
+CONTRACT_ADDRESS = 0xb54bcee43acad2c99e59bc89f19823181da4cef9  (Base mainnet)
 USDC_ADDRESS     = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913  (Base USDC)
 CHAIN_ID         = 8453
 USDC_DECIMALS    = 6
@@ -260,7 +260,7 @@ Check Netlify Function logs in the Netlify dashboard, or trigger the GitHub Acti
 
 | Resource | URL |
 |---|---|
-| Smart Contract (Basescan) | https://basescan.org/address/0xa0caaed5d619dca906170eb01540d893117b73a5 |
+| Smart Contract (Basescan) | https://basescan.org/address/0xb54bcee43acad2c99e59bc89f19823181da4cef9 |
 | Base blockchain | https://base.org |
 | Trafikverket API docs | https://api.trafikinfo.trafikverket.se |
 | USDC on Base | https://basescan.org/token/0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913 |
