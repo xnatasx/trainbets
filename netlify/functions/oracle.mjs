@@ -151,7 +151,7 @@ const oracleJob = async () => {
     const apiKey          = process.env.TRAFIKVERKET_API_KEY;
     const privateKey      = process.env.TREASURY_PRIVATE_KEY;
     const rpcUrl          = process.env.RPC_URL          ?? "https://mainnet.base.org";
-    const contractAddress = process.env.CONTRACT_ADDRESS ?? "0xa0caaed5d619dca906170eb01540d893117b73a5";
+    const contractAddress = process.env.CONTRACT_ADDRESS ?? "0xB54bCee43ACad2c99e59Bc89f19823181DA4ceF9";
     if (!apiKey)     throw new Error("Missing TRAFIKVERKET_API_KEY");
     if (!privateKey) throw new Error("Missing TREASURY_PRIVATE_KEY");
     const provider = new ethers.JsonRpcProvider(rpcUrl);

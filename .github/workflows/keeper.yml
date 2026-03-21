@@ -25,7 +25,7 @@ jobs:
           TRAFIKVERKET_API_KEY: ${{ secrets.TRAFIKVERKET_API_KEY }}
           KEEPER_PRIVATE_KEY:   ${{ secrets.KEEPER_PRIVATE_KEY }}
           RPC_URL:              "https://mainnet.base.org"
-          CONTRACT_ADDRESS:     "0xa0caaed5d619dca906170eb01540d893117b73a5"
+          CONTRACT_ADDRESS:     "0xB54bCee43ACad2c99e59Bc89f19823181DA4ceF9"
         run: node scripts/keeper.mjs 2>&1 | tee keeper.log
 
       - name: Upload keeper log
