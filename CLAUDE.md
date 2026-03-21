@@ -53,6 +53,7 @@ These values appear in multiple files — keep them consistent:
 
 ```
 CONTRACT_ADDRESS = 0xb54bcee43acad2c99e59bc89f19823181da4cef9  (Base mainnet)
+OWNER_ADDRESS    = 0xA0CaAEd5D619dCA906170eB01540d893117B73a5  (treasury/keeper wallet, contract owner)
 USDC_ADDRESS     = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913  (Base USDC)
 CHAIN_ID         = 8453
 USDC_DECIMALS    = 6
