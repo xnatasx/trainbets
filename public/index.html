@@ -570,6 +570,8 @@ const T = {
     s5d:"Hämta USDC direkt på kedjan. Inga mellanhänder, direkta utbetalningar.",
     s6t:"Passiv inkomst",
     s6d:"Stockholm–Göteborg är historiskt i tid ~68% av gångerna. Satsa smart!",
+    loadingTrains:"Hämtar tågavgångar…",
+    creatingMarket:"Skapar marknad på kedjan…",
   },
   en:{
     connectWallet:"Connect Wallet",
@@ -608,6 +610,8 @@ const T = {
     s5d:"Claim USDC directly on-chain. No intermediaries, instant payouts.",
     s6t:"Passive Income",
     s6d:"Stockholm–Gothenburg trains run on time ~68% historically. Bet smart!",
+    loadingTrains:"Fetching train departures…",
+    creatingMarket:"Creating market on-chain…",
   }
 };
 const t = k => T[lang][k] ?? T.en[k] ?? k;
@@ -737,7 +741,13 @@ async function loadUserBets(markets) {
 function updateStats() {
   const n     = nowSec();
   const today = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Stockholm" }).format(new Date());
-  const open  = allMarkets.filter(m => m.outcome===0 && m.closingTime>n);
+  // Count upcoming bettable trains from ticker (source of truth for "open" tab)
+  const openCount = (tickerCache||[]).filter(tr => {
+    const sig = tr.toStation || (tr.toLocations??[]).find(l => DEST_SIGS.has(l));
+    return sig && DEST_SIGS.has(sig) && !tr.canceled &&
+      Math.floor(new Date(tr.scheduledTime).getTime()/1000) - 1800 > n;
+  }).length;
+  const open  = { length: openCount || allMarkets.filter(m => m.outcome===0 && m.closingTime>n).length };
   // Only count today's markets for volume + on-time % so we don't show all-time accumulated totals
   const todayMkts = allMarkets.filter(m => (m.date||"").startsWith(today));
   const res   = todayMkts.filter(m => m.outcome!==0);
@@ -775,6 +785,7 @@ async function refreshTicker() {
     tickerCache = arr;
     renderTicker(arr);
     updateStationStats();
+    if (activeTab === "marknader" && activeSubTab === "open") renderMarkets();
   } catch(err) {
     console.warn("[Ticker]", err.message);
   }
@@ -836,22 +847,62 @@ function renderAllTabs() {
 }
 
 function renderMarkets() {
-  const n = nowSec();
+  const n   = nowSec();
   const today = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Stockholm" }).format(new Date());
+  const el  = document.getElementById("markets-container");
+
+  if (activeSubTab === "open") {
+    // Open tab: source of truth is Trafikverket ticker; on-chain market data overlaid if available
+    const mktMap = new Map(allMarkets.map(m => [m.trainId + "|" + m.date, m]));
+    const upcoming = (tickerCache || [])
+      .filter(tr => {
+        if (tr.canceled) return false;
+        const sig = tr.toStation || (tr.toLocations ?? []).find(l => DEST_SIGS.has(l));
+        if (!sig || !DEST_SIGS.has(sig)) return false;
+        return Math.floor(new Date(tr.scheduledTime).getTime() / 1000) - 1800 > n;
+      })
+      .map(tr => {
+        const sig    = tr.toStation || (tr.toLocations ?? []).find(l => DEST_SIGS.has(l));
+        const fullId = tr.trainId + " " + sig;
+        const date   = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Stockholm" }).format(new Date(tr.scheduledTime));
+        return { tr, sig, fullId, date, mkt: mktMap.get(fullId + "|" + date) };
+      });
+    if (!upcoming.length) {
+      el.innerHTML = `<div class="empty">${tickerCache.length ? t("noOpen") : t("loadingTrains")}</div>`;
+      return;
+    }
+    el.innerHTML = `<div class="markets-grid">${upcoming.map(({ tr, sig, fullId, date, mkt }) =>
+      mkt ? marketCard(mkt) : preMarketCard(tr, sig, fullId, date)
+    ).join("")}</div>`;
+    el.querySelectorAll("[data-bet-id]").forEach(btn =>
+      btn.addEventListener("click", () => {
+        const m = allMarkets.find(m => m.id === parseInt(btn.dataset.betId));
+        openBetModal(parseInt(btn.dataset.betId), parseInt(btn.dataset.side), m);
+      })
+    );
+    el.querySelectorAll("[data-claim-id]").forEach(btn =>
+      btn.addEventListener("click", () => claimWinnings(parseInt(btn.dataset.claimId)))
+    );
+    el.querySelectorAll("[data-pre-side]").forEach(btn =>
+      btn.addEventListener("click", () =>
+        openPreMarket(btn.dataset.preId, btn.dataset.preDate, Number(btn.dataset.preCt), Number(btn.dataset.preSide))
+      )
+    );
+    return;
+  }
+
+  // Pending / Resolved tabs: use on-chain markets only
   const filters = {
-    open:     m => m.outcome===0 && m.closingTime>n && m.date===today,
     pending:  m => m.outcome===0 && m.closingTime<=n && m.date===today,
-    // resolved: today only, skip markets with zero bets (no participation)
     resolved: m => m.outcome!==0 && m.date===today && (m.totalYes>0n||m.totalNo>0n),
   };
-  const noMsg = {open:t("noOpen"), pending:t("noPending"), resolved:t("noResolved")};
-  const visible = allMarkets.filter(filters[activeSubTab] || filters.open);
-  const el = document.getElementById("markets-container");
-  if (!visible.length) { el.innerHTML = `<div class="empty">${noMsg[activeSubTab]||noMsg.open}</div>`; return; }
+  const noMsg = { pending: t("noPending"), resolved: t("noResolved") };
+  const visible = allMarkets.filter(filters[activeSubTab] || (() => false));
+  if (!visible.length) { el.innerHTML = `<div class="empty">${noMsg[activeSubTab]||""}</div>`; return; }
   el.innerHTML = `<div class="markets-grid">${visible.map(marketCard).join("")}</div>`;
   el.querySelectorAll("[data-bet-id]").forEach(btn =>
     btn.addEventListener("click", () => {
-      const m = allMarkets.find(m => m.id===parseInt(btn.dataset.betId));
+      const m = allMarkets.find(m => m.id === parseInt(btn.dataset.betId));
       openBetModal(parseInt(btn.dataset.betId), parseInt(btn.dataset.side), m);
     })
   );
@@ -923,6 +974,58 @@ function marketCard(m) {
     </div>
     ${userBet}${action}
   </div>`;
+}
+
+function preMarketCard(tr, sig, fullId, date) {
+  const dest    = DEST[sig] || { sv: sig, en: sig };
+  const route   = "Stockholm C → " + (dest[lang] || dest.sv);
+  const schedStr= new Date(tr.scheduledTime).toLocaleTimeString("sv-SE",{hour:"2-digit",minute:"2-digit"});
+  const ct      = Math.floor(new Date(tr.scheduledTime).getTime() / 1000) - 1800;
+  const closes  = fmtCountdown(ct - nowSec());
+  const attrs   = `data-pre-id="${fullId}" data-pre-date="${date}" data-pre-ct="${ct}"`;
+  return `<div class="mcard">
+    <div class="mcard-header">
+      <div>
+        <div class="mcard-route">${route}</div>
+        <div class="mcard-sub">Tåg ${tr.trainId} · ${date} avg ${schedStr} · ${t("closesIn")} ${closes}</div>
+      </div>
+      <span class="badge badge-open">🟢 ${t("open")}</span>
+    </div>
+    <div class="pool-wrap">
+      <div class="pool-labels"><span>${t("onTime")}</span><span>${t("delayed")}</span></div>
+      <div class="pool-bar"><div class="pool-yes" style="width:50%"></div><div class="pool-no" style="width:50%"></div></div>
+      <div class="pool-amounts">
+        <span class="pool-yes-val" style="opacity:.5;font-style:italic">${lang==="sv"?"Inga bet ännu":"No bets yet"}</span>
+        <span class="pool-no-val" style="opacity:.5;font-style:italic">∞×</span>
+      </div>
+    </div>
+    <div class="bet-row">
+      <button class="btn-yes" ${attrs} data-pre-side="1">${t("ja")} <span class="btn-odds">∞×</span></button>
+      <button class="btn-no"  ${attrs} data-pre-side="2">${t("nej")} <span class="btn-odds">∞×</span></button>
+    </div>
+  </div>`;
+}
+
+async function openPreMarket(trainId, deptDate, closingTime, side) {
+  if (!account) { await connectWallet(); if (!account) return; }
+  showToast(t("creatingMarket"), true);
+  try {
+    const res  = await fetch("/.netlify/functions/create-market", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ trainId, departureDate: deptDate, closingTime }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.marketId) throw new Error(data.error || "No marketId returned");
+    const c   = await getWorkingContract();
+    const raw = await c.getMarket(BigInt(data.marketId));
+    const mkt = { id: data.marketId, trainId: raw.trainId, date: raw.departureDate,
+      closingTime: Number(raw.closingTime), outcome: Number(raw.outcome),
+      totalYes: raw.totalYes, totalNo: raw.totalNo };
+    if (!allMarkets.find(x => x.id === data.marketId)) allMarkets.push(mkt);
+    openBetModal(data.marketId, side, mkt);
+  } catch(err) {
+    showToast((lang==="sv"?"Fel: ":"Error: ") + err.message, false);
+  }
 }
 
 function renderProfile() {
