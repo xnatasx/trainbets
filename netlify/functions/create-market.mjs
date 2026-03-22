@@ -38,24 +38,20 @@ export async function handler(event) {
     const wallet   = new ethers.Wallet(privateKey, provider);
     const contract = new ethers.Contract(contractAddress, CONTRACT_ABI, wallet);
 
-    // Sanity-check ETH balance before attempting on-chain writes
-    const balance = await provider.getBalance(wallet.address);
-    console.log(`[create-market] wallet ${wallet.address} balance: ${ethers.formatEther(balance)} ETH`);
-    if (balance < ethers.parseEther("0.00005")) {
-      throw new Error(`Treasury wallet low on ETH (${ethers.formatEther(balance)} ETH) — top up ${wallet.address} on Base`);
-    }
-
     // Check if market already exists — return immediately if so (idempotent)
     const count    = Number(await contract.marketCount());
+    // Scan only the most recent 200 markets — older ones can't match today's departures
+    const scanStart = Math.max(1, count - 199);
     const settled  = await Promise.allSettled(
-      Array.from({ length: count }, (_, i) => contract.getMarket(i + 1))
+      Array.from({ length: count - scanStart + 1 }, (_, i) => contract.getMarket(scanStart + i))
     );
     for (let i = 0; i < settled.length; i++) {
       if (settled[i].status === "fulfilled") {
         const m = settled[i].value;
         if (m.trainId === trainId && m.departureDate === departureDate) {
-          console.log(`[create-market] already exists: ${trainId} ${departureDate} → marketId ${i + 1}`);
-          return { statusCode: 200, headers: CORS, body: JSON.stringify({ marketId: i + 1 }) };
+          const existingId = scanStart + i;
+          console.log(`[create-market] already exists: ${trainId} ${departureDate} → marketId ${existingId}`);
+          return { statusCode: 200, headers: CORS, body: JSON.stringify({ marketId: existingId }) };
         }
       }
     }
