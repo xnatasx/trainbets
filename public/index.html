@@ -1027,7 +1027,8 @@ async function openPreMarket(trainId, deptDate, closingTime, side) {
     openBetModal(data.marketId, side, mkt);
   } catch(err) {
     console.error("[openPreMarket] error", err);
-    showToast((lang==="sv"?"Fel: ":"Error: ") + err.message, false, true); // persist error too
+    hideToast();
+    alert("Fel / Error:\n\n" + err.message);
   }
 }
 
