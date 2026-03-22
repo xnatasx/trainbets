@@ -53,13 +53,16 @@ export async function handler(event) {
       }
     }
 
-    // Create new market on-chain
-    console.log(`[create-market] creating: ${trainId} ${departureDate} closingTime=${closingTime}`);
-    const tx = await contract.createMarket(trainId, departureDate, Number(closingTime), BASE_GAS);
-    await tx.wait();
-    const newId = Number(await contract.marketCount());
-    console.log(`[create-market] created marketId=${newId}`);
-    return { statusCode: 200, headers: CORS, body: JSON.stringify({ marketId: newId }) };
+    // Predict the new marketId via staticCall (no gas, instant)
+    const expectedId = Number(await contract.createMarket.staticCall(
+      trainId, departureDate, Number(closingTime)
+    ));
+    // Submit the real transaction — await submission but NOT mining (Base mines in ~2s)
+    // By the time the user enters a bet amount and clicks Approve, it will be confirmed.
+    console.log(`[create-market] submitting: ${trainId} ${departureDate} closingTime=${closingTime} → expected marketId=${expectedId}`);
+    await contract.createMarket(trainId, departureDate, Number(closingTime), BASE_GAS);
+    console.log(`[create-market] submitted marketId=${expectedId}`);
+    return { statusCode: 200, headers: CORS, body: JSON.stringify({ marketId: expectedId }) };
 
   } catch (err) {
     console.error("[create-market]", err.message);

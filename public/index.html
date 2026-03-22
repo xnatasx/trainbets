@@ -1016,11 +1016,11 @@ async function openPreMarket(trainId, deptDate, closingTime, side) {
     });
     const data = await res.json();
     if (!res.ok || !data.marketId) throw new Error(data.error || "No marketId returned");
-    const c   = await getWorkingContract();
-    const raw = await c.getMarket(BigInt(data.marketId));
-    const mkt = { id: data.marketId, trainId: raw.trainId, date: raw.departureDate,
-      closingTime: Number(raw.closingTime), outcome: Number(raw.outcome),
-      totalYes: raw.totalYes, totalNo: raw.totalNo };
+    // Build market object from data we already have — skips an extra RPC round-trip.
+    // The on-chain tx was already submitted; it'll be mined before the user can click Approve.
+    const mkt = { id: data.marketId, trainId,
+      date: deptDate, closingTime: Number(closingTime),
+      outcome: 0, totalYes: 0n, totalNo: 0n };
     if (!allMarkets.find(x => x.id === data.marketId)) allMarkets.push(mkt);
     openBetModal(data.marketId, side, mkt);
   } catch(err) {
