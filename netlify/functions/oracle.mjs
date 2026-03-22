@@ -84,8 +84,10 @@ async function createMarkets(contract, apiKey) {
   const cutoff = now + MARKET_LOOKAHEAD_HOURS * 3600000;
   let count = 0;
   try { count = Number(await contract.marketCount()); } catch(e) { console.error('marketCount err: ' + e.message); return; }
+  // Only scan the most recent 200 markets — older ones can't conflict with upcoming departures
+  const scanStart = Math.max(1, count - 199);
   const settled1 = await Promise.allSettled(
-    Array.from({ length: count }, (_, i) => contract.getMarket(i + 1))
+    Array.from({ length: count - scanStart + 1 }, (_, i) => contract.getMarket(scanStart + i))
   );
   const allMkts = settled1.map(r => r.status === 'fulfilled' ? r.value : null).filter(Boolean);
   const existing = new Set(allMkts.map(m => m.trainId + "|" + m.departureDate));
@@ -118,10 +120,12 @@ async function resolveMarkets(contract, apiKey) {
   let count = 0;
   try { count = Number(await contract.marketCount()); } catch(e) { console.error('marketCount err: ' + e.message); return; }
   const now     = Math.floor(Date.now() / 1000);
+  // Scan last 200 markets — unresolved markets older than 48h are skipped anyway
+  const scanStart2 = Math.max(1, count - 199);
   const settled2 = await Promise.allSettled(
-    Array.from({ length: count }, (_, i) => contract.getMarket(i + 1))
+    Array.from({ length: count - scanStart2 + 1 }, (_, i) => contract.getMarket(scanStart2 + i))
   );
-  const allMkts = settled2.map((r, i) => r.status !== 'fulfilled' ? null : { trainId: r.value.trainId, departureDate: r.value.departureDate, closingTime: r.value.closingTime, outcome: r.value.outcome, totalYes: r.value.totalYes, totalNo: r.value.totalNo, marketId: i + 1 }).filter(Boolean);
+  const allMkts = settled2.map((r, i) => r.status !== 'fulfilled' ? null : { trainId: r.value.trainId, departureDate: r.value.departureDate, closingTime: r.value.closingTime, outcome: r.value.outcome, totalYes: r.value.totalYes, totalNo: r.value.totalNo, marketId: scanStart2 + i }).filter(Boolean);
   const toResolve = allMkts
     .filter(m => Number(m.outcome) === Outcome.Unresolved &&
                  Number(m.closingTime) <= now &&
