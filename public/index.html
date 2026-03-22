@@ -1010,14 +1010,15 @@ async function openPreMarket(trainId, deptDate, closingTime, side) {
   if (!account) { await connectWallet(); if (!account) return; }
   showToast(t("creatingMarket"), true, true); // persist until resolved
   try {
+    console.log("[openPreMarket] calling create-market", { trainId, deptDate, closingTime });
     const res  = await fetch("/.netlify/functions/create-market", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ trainId, departureDate: deptDate, closingTime }),
     });
-    const data = await res.json();
+    const text = await res.text();
+    console.log("[openPreMarket] response", res.status, text);
+    const data = JSON.parse(text);
     if (!res.ok || !data.marketId) throw new Error(data.error || "No marketId returned");
-    // Build market object from data we already have — skips an extra RPC round-trip.
-    // The on-chain tx was already submitted; it'll be mined before the user can click Approve.
     const mkt = { id: data.marketId, trainId,
       date: deptDate, closingTime: Number(closingTime),
       outcome: 0, totalYes: 0n, totalNo: 0n };
@@ -1025,7 +1026,8 @@ async function openPreMarket(trainId, deptDate, closingTime, side) {
     hideToast();
     openBetModal(data.marketId, side, mkt);
   } catch(err) {
-    showToast((lang==="sv"?"Fel: ":"Error: ") + err.message, false);
+    console.error("[openPreMarket] error", err);
+    showToast((lang==="sv"?"Fel: ":"Error: ") + err.message, false, true); // persist error too
   }
 }
 
