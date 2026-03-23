@@ -40,8 +40,8 @@ export async function handler(event) {
 
     // Check if market already exists — return immediately if so (idempotent)
     const count    = Number(await contract.marketCount());
-    // Scan only the most recent 200 markets — older ones can't match today's departures
-    const scanStart = Math.max(1, count - 199);
+    // Scan only the most recent 50 markets — covers ~2 days at current creation rate
+    const scanStart = Math.max(1, count - 49);
     const settled  = await Promise.allSettled(
       Array.from({ length: count - scanStart + 1 }, (_, i) => contract.getMarket(scanStart + i))
     );
