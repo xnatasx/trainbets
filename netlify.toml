@@ -5,3 +5,6 @@
 
 [functions]
   node_bundler = "esbuild"
+
+[functions."create-market"]
+  timeout = 26
