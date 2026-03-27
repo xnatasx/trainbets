@@ -85,7 +85,7 @@ async function createMarkets(contract, apiKey) {
   let count = 0;
   try { count = Number(await contract.marketCount()); } catch(e) { console.error('marketCount err: ' + e.message); return; }
   // Only scan the most recent 200 markets — older ones can't conflict with upcoming departures
-  const scanStart = Math.max(1, count - 49);
+  const scanStart = Math.max(1, count - 199);
   const settled1 = await Promise.allSettled(
     Array.from({ length: count - scanStart + 1 }, (_, i) => contract.getMarket(scanStart + i))
   );
@@ -121,7 +121,7 @@ async function resolveMarkets(contract, apiKey) {
   try { count = Number(await contract.marketCount()); } catch(e) { console.error('marketCount err: ' + e.message); return; }
   const now     = Math.floor(Date.now() / 1000);
   // Scan last 200 markets — unresolved markets older than 48h are skipped anyway
-  const scanStart2 = Math.max(1, count - 49);
+  const scanStart2 = Math.max(1, count - 199);
   const settled2 = await Promise.allSettled(
     Array.from({ length: count - scanStart2 + 1 }, (_, i) => contract.getMarket(scanStart2 + i))
   );

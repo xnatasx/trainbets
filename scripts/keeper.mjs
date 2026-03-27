@@ -95,16 +95,17 @@ async function run() {
   console.log(`[Keeper] Wallet: ${wallet.address}`);
   const now   = Math.floor(Date.now() / 1000);
 
-  // — Load existing markets —
+  // — Load existing markets (last 200 to avoid RPC overload) —
   let count;
   try { count = Number(await contract.marketCount()); }
   catch (err) { console.error("[Keeper] Failed to read marketCount:", err.message); process.exit(1); }
+  const scanStart = Math.max(1, count - 199);
   const mkts  = (await Promise.allSettled(
-    Array.from({ length: count }, (_, i) => contract.getMarket(i + 1))
+    Array.from({ length: count - scanStart + 1 }, (_, i) => contract.getMarket(scanStart + i))
   )).map((r, i) => r.status === "fulfilled"
     ? { trainId: r.value.trainId, departureDate: r.value.departureDate,
         closingTime: Number(r.value.closingTime), outcome: Number(r.value.outcome),
-        totalYes: r.value.totalYes, totalNo: r.value.totalNo, marketId: i + 1 }
+        totalYes: r.value.totalYes, totalNo: r.value.totalNo, marketId: scanStart + i }
     : null
   ).filter(Boolean);
 
