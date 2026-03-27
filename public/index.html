@@ -503,7 +503,7 @@ const TV_PROXY  = "/.netlify/functions/trafikverket";
 
 const ABI = [
   "function marketCount() view returns (uint256)",
-  "function getBet(uint256, address) view returns (uint256 amount, uint8 side, bool claimed)",
+  "function getUserBet(uint256, address) view returns (uint256 amount, uint8 side, bool claimed)",
   "function placeBet(uint256 marketId, uint8 side, uint256 amount)",
   "function claimWinnings(uint256 marketId)",
   "function getMarket(uint256) view returns (tuple(string trainId, string departureDate, uint256 closingTime, uint8 outcome, uint256 totalYes, uint256 totalNo))",
@@ -716,15 +716,17 @@ async function loadMarkets() {
     throw new Error("Kontraktet svarar inte: " + err.message);
   }
   if (!n) return [];
+  // Scan only the last 200 markets to avoid overwhelming the RPC endpoint
+  const scanStart = Math.max(1, n - 199);
   const rs = await Promise.allSettled(
-    Array.from({length:n},(_,i) => c.getMarket(BigInt(i+1)))
+    Array.from({length: n - scanStart + 1}, (_, i) => c.getMarket(BigInt(scanStart + i)))
   );
-  return rs.map((r,i) => {
+  return rs.map((r, i) => {
     if (r.status !== "fulfilled") return null;
     const m = r.value;
-    return { id:i+1, trainId:m.trainId, date:m.departureDate,
-      closingTime:Number(m.closingTime), outcome:Number(m.outcome),
-      totalYes:m.totalYes, totalNo:m.totalNo };
+    return { id: scanStart + i, trainId: m.trainId, date: m.departureDate,
+      closingTime: Number(m.closingTime), outcome: Number(m.outcome),
+      totalYes: m.totalYes, totalNo: m.totalNo };
   }).filter(Boolean);
 }
 
@@ -734,7 +736,7 @@ async function loadUserBets(markets) {
   try { c = await getWorkingContract(); } catch { return; }
   await Promise.allSettled(markets.map(async m => {
     try {
-      const b = await c.getBet(BigInt(m.id), account);
+      const b = await c.getUserBet(BigInt(m.id), account);
       if (b.amount > 0n) m.userBet = {amount:b.amount, side:Number(b.side), claimed:b.claimed};
     } catch {}
   }));
@@ -1025,6 +1027,7 @@ async function openPreMarket(trainId, deptDate, closingTime, side) {
   document.getElementById("modal-balance").textContent = "";
   document.getElementById("btn-approve").textContent = lang==="sv" ? "⏳ Skapar marknad…" : "⏳ Creating market…";
   document.getElementById("btn-approve").disabled = true;
+  document.getElementById("btn-approve").onclick = null; // clear any leftover retry handler
   document.getElementById("btn-bet").textContent = t("betBtn");
   document.getElementById("btn-bet").disabled = true;
   document.getElementById("modal-step").textContent = lang==="sv" ? "Skapar marknad på kedjan…" : "Creating market on-chain…";
@@ -1033,28 +1036,43 @@ async function openPreMarket(trainId, deptDate, closingTime, side) {
   loadModalBalance();
 
   // Create the on-chain market in background while user reads the modal
-  try {
-    console.log("[openPreMarket] calling create-market", { trainId, deptDate, closingTime });
-    const res  = await fetch("/.netlify/functions/create-market", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ trainId, departureDate: deptDate, closingTime }),
-    });
-    const text = await res.text();
-    console.log("[openPreMarket] response", res.status, text);
-    const data = JSON.parse(text);
-    if (!res.ok || !data.marketId) throw new Error(data.error || "No marketId returned");
-    betModal.marketId = data.marketId;
-    mkt.id = data.marketId;
-    if (!allMarkets.find(x => x.id === data.marketId)) allMarkets.push(mkt);
-    // Unlock approval now that the market exists on-chain
-    document.getElementById("btn-approve").textContent = t("approveBtn");
-    document.getElementById("btn-approve").disabled = false;
-    document.getElementById("modal-step").textContent = t("step1");
-  } catch(err) {
-    console.error("[openPreMarket] error", err);
-    document.getElementById("modal-overlay").classList.remove("open");
-    alert("Fel / Error:\n\n" + err.message);
-  }
+  const attemptCreate = async () => {
+    document.getElementById("btn-approve").textContent = lang==="sv" ? "⏳ Skapar marknad…" : "⏳ Creating market…";
+    document.getElementById("btn-approve").disabled = true;
+    document.getElementById("modal-step").textContent = lang==="sv" ? "Skapar marknad på kedjan…" : "Creating market on-chain…";
+    document.getElementById("modal-alert").style.display = "none";
+    try {
+      console.log("[openPreMarket] calling create-market", { trainId, deptDate, closingTime });
+      const res  = await fetch("/.netlify/functions/create-market", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ trainId, departureDate: deptDate, closingTime }),
+      });
+      const text = await res.text();
+      console.log("[openPreMarket] response", res.status, text);
+      const data = JSON.parse(text);
+      if (!res.ok || !data.marketId) throw new Error(data.error || "No marketId returned");
+      betModal.marketId = data.marketId;
+      mkt.id = data.marketId;
+      if (!allMarkets.find(x => x.id === data.marketId)) allMarkets.push(mkt);
+      // Unlock approval now that the market exists on-chain
+      document.getElementById("btn-approve").textContent = t("approveBtn");
+      document.getElementById("btn-approve").disabled = false;
+      document.getElementById("modal-step").textContent = t("step1");
+    } catch(err) {
+      console.error("[openPreMarket] error", err);
+      // Keep modal open — show the error inline so the user can retry or dismiss
+      showAlert((lang==="sv" ? "Kunde inte skapa marknad: " : "Could not create market: ") + err.message, true);
+      document.getElementById("btn-approve").textContent = lang==="sv" ? "🔄 Försök igen" : "🔄 Retry";
+      document.getElementById("btn-approve").disabled = false;
+      document.getElementById("modal-step").textContent = "";
+      // Wire the approve button to retry instead of approve
+      document.getElementById("btn-approve").onclick = () => {
+        document.getElementById("btn-approve").onclick = null;
+        attemptCreate();
+      };
+    }
+  };
+  attemptCreate();
 }
 
 function renderProfile() {
@@ -1086,7 +1104,10 @@ async function connectWallet() {
     const net = await provider.getNetwork();
     if (net.chainId!==CHAIN_ID) {
       try { await window.ethereum.request({method:"wallet_switchEthereumChain",params:[{chainId:"0x2105"}]}); }
-      catch { await window.ethereum.request({method:"wallet_addEthereumChain",params:[{chainId:"0x2105",chainName:"Base",nativeCurrency:{name:"ETH",symbol:"ETH",decimals:18},rpcUrls:["https://mainnet.base.org"],blockExplorerUrls:["https://basescan.org"]}]}); }
+      catch {
+        try { await window.ethereum.request({method:"wallet_addEthereumChain",params:[{chainId:"0x2105",chainName:"Base",nativeCurrency:{name:"ETH",symbol:"ETH",decimals:18},rpcUrls:["https://mainnet.base.org"],blockExplorerUrls:["https://basescan.org"]}]}); }
+        catch(addErr) { alert(lang==="sv"?"Byt till Base-nätverket i din plånbok (Chain ID 8453).":"Please switch to the Base network in your wallet (Chain ID 8453)."); throw addErr; }
+      }
       provider = new ethers.BrowserProvider(window.ethereum);
     }
     signer  = await provider.getSigner();
@@ -1096,7 +1117,13 @@ async function connectWallet() {
     btn.classList.add("connected");
     await loadUserBets(allMarkets);
     renderAllTabs();
-  } catch(err) { console.error("[Wallet]", err.message); }
+  } catch(err) {
+    console.error("[Wallet]", err.message);
+    // Don't alert for user-rejected requests (code 4001)
+    if (err.code !== 4001 && !err.message?.includes("User rejected")) {
+      showToast((lang==="sv"?"Plånboksfel: ":"Wallet error: ") + (err.reason||err.message||"Unknown error"), false);
+    }
+  }
 }
 
 // ═══ BET MODAL ════════════════════════════════════════════════
@@ -1112,6 +1139,7 @@ function openBetModal(marketId, side, m) {
   document.getElementById("modal-balance").textContent = "";
   document.getElementById("btn-approve").textContent = t("approveBtn");
   document.getElementById("btn-approve").disabled = false;
+  document.getElementById("btn-approve").onclick = null; // clear any retry handler from openPreMarket
   document.getElementById("btn-bet").textContent = t("betBtn");
   document.getElementById("btn-bet").disabled = true;
   document.getElementById("modal-step").textContent = t("step1");
