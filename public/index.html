@@ -1039,17 +1039,38 @@ async function openPreMarket(trainId, deptDate, closingTime, side) {
   const attemptCreate = async () => {
     document.getElementById("btn-approve").textContent = lang==="sv" ? "⏳ Skapar marknad…" : "⏳ Creating market…";
     document.getElementById("btn-approve").disabled = true;
+    document.getElementById("btn-approve").onclick = null;
     document.getElementById("modal-step").textContent = lang==="sv" ? "Skapar marknad på kedjan…" : "Creating market on-chain…";
     document.getElementById("modal-alert").style.display = "none";
     try {
+      // First: check if the oracle already created this market (avoids round-trip to create-market function)
+      const freshMarkets = await loadMarkets().catch(() => allMarkets);
+      const existingMkt = freshMarkets.find(m => m.trainId === trainId && m.date === deptDate);
+      if (existingMkt) {
+        // Market already exists — update state and unlock immediately
+        allMarkets = freshMarkets;
+        betModal.marketId = existingMkt.id;
+        mkt.id = existingMkt.id;
+        document.getElementById("btn-approve").textContent = t("approveBtn");
+        document.getElementById("btn-approve").disabled = false;
+        document.getElementById("modal-step").textContent = t("step1");
+        return;
+      }
+
+      // Market doesn't exist yet — ask the backend oracle wallet to create it
       console.log("[openPreMarket] calling create-market", { trainId, deptDate, closingTime });
       const res  = await fetch("/.netlify/functions/create-market", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ trainId, departureDate: deptDate, closingTime }),
       });
       const text = await res.text();
-      console.log("[openPreMarket] response", res.status, text);
-      const data = JSON.parse(text);
+      console.log("[openPreMarket] response", res.status, text.slice(0, 500));
+
+      // If the response is not JSON (e.g. Netlify HTML error page), surface a clear message
+      let data;
+      try { data = JSON.parse(text); }
+      catch { throw new Error(`HTTP ${res.status} — server returned non-JSON: ${text.slice(0, 120)}`); }
+
       if (!res.ok || !data.marketId) throw new Error(data.error || "No marketId returned");
       betModal.marketId = data.marketId;
       mkt.id = data.marketId;
