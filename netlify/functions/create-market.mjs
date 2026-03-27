@@ -6,10 +6,9 @@ const CONTRACT_ABI = [
   "function getMarket(uint256) view returns (tuple(string trainId, string departureDate, uint256 closingTime, uint8 outcome, uint256 totalYes, uint256 totalNo))",
   "function createMarket(string calldata trainId, string calldata departureDate, uint256 closingTime) external returns (uint256)",
 ];
-const BASE_GAS = {
-  maxFeePerGas:         ethers.parseUnits("0.005", "gwei"),
-  maxPriorityFeePerGas: ethers.parseUnits("0.001", "gwei"),
-};
+// NOTE: BASE_GAS is defined inside handler() — NOT at module scope.
+// Top-level ethers calls would crash the module on load and cause Netlify to return an HTML error
+// page instead of JSON, making every response appear as "Unexpected token '<'".
 const CORS = {
   "Access-Control-Allow-Origin":  "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -29,10 +28,17 @@ export async function handler(event) {
       return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "Market already closed (closingTime in the past)" }) };
     }
 
+    // Define gas params here (inside handler) so ethers.parseUnits never runs at module load time.
+    // A top-level ethers call makes Netlify return HTML on module crash instead of our JSON error.
+    const BASE_GAS = {
+      maxFeePerGas:         ethers.parseUnits("0.005", "gwei"),
+      maxPriorityFeePerGas: ethers.parseUnits("0.001", "gwei"),
+    };
+
     const rpcUrl          = process.env.RPC_URL          ?? "https://mainnet.base.org";
     const privateKey      = process.env.TREASURY_PRIVATE_KEY;
     const contractAddress = process.env.CONTRACT_ADDRESS ?? CONTRACT_ADDRESS;
-    if (!privateKey) throw new Error("Missing TREASURY_PRIVATE_KEY");
+    if (!privateKey) throw new Error("Missing TREASURY_PRIVATE_KEY — set this env var in Netlify dashboard");
 
     const provider = new ethers.JsonRpcProvider(rpcUrl);
     const wallet   = new ethers.Wallet(privateKey, provider);
