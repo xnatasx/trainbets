@@ -1008,7 +1008,25 @@ function preMarketCard(tr, sig, fullId, date) {
 
 async function openPreMarket(trainId, deptDate, closingTime, side) {
   if (!account) { await connectWallet(); if (!account) return; }
-  showToast(t("creatingMarket"), true, true); // persist until resolved
+
+  // Show modal immediately so the user sees a response right away
+  const mkt = { id: null, trainId, date: deptDate, closingTime: Number(closingTime), outcome: 0, totalYes: 0n, totalNo: 0n };
+  betModal = { marketId: null, side, market: mkt };
+  const {route} = parseTrainId(trainId);
+  document.getElementById("modal-title").textContent = side===1
+    ? "🟢 "+t("ja")+" — "+route
+    : "🔴 "+t("nej")+" — "+route;
+  document.getElementById("modal-sub").textContent = "Tåg "+trainId.split(" ")[0]+" · "+deptDate;
+  document.getElementById("modal-alert").style.display = "none";
+  document.getElementById("btn-approve").textContent = lang==="sv" ? "⏳ Skapar marknad…" : "⏳ Creating market…";
+  document.getElementById("btn-approve").disabled = true;
+  document.getElementById("btn-bet").textContent = t("betBtn");
+  document.getElementById("btn-bet").disabled = true;
+  document.getElementById("modal-step").textContent = lang==="sv" ? "Skapar marknad på kedjan…" : "Creating market on-chain…";
+  updateModalInfo();
+  document.getElementById("modal-overlay").classList.add("open");
+
+  // Create the on-chain market in background while user reads the modal
   try {
     console.log("[openPreMarket] calling create-market", { trainId, deptDate, closingTime });
     const res  = await fetch("/.netlify/functions/create-market", {
@@ -1019,15 +1037,16 @@ async function openPreMarket(trainId, deptDate, closingTime, side) {
     console.log("[openPreMarket] response", res.status, text);
     const data = JSON.parse(text);
     if (!res.ok || !data.marketId) throw new Error(data.error || "No marketId returned");
-    const mkt = { id: data.marketId, trainId,
-      date: deptDate, closingTime: Number(closingTime),
-      outcome: 0, totalYes: 0n, totalNo: 0n };
+    betModal.marketId = data.marketId;
+    mkt.id = data.marketId;
     if (!allMarkets.find(x => x.id === data.marketId)) allMarkets.push(mkt);
-    hideToast();
-    openBetModal(data.marketId, side, mkt);
+    // Unlock approval now that the market exists on-chain
+    document.getElementById("btn-approve").textContent = t("approveBtn");
+    document.getElementById("btn-approve").disabled = false;
+    document.getElementById("modal-step").textContent = t("step1");
   } catch(err) {
     console.error("[openPreMarket] error", err);
-    hideToast();
+    document.getElementById("modal-overlay").classList.remove("open");
     alert("Fel / Error:\n\n" + err.message);
   }
 }
