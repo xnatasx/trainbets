@@ -18,7 +18,7 @@ const CORS = {
 
 export async function handler(event) {
   if (event.httpMethod === "OPTIONS") return { statusCode: 200, headers: CORS, body: "" };
-  if (event.httpMethod !== "POST")    return { statusCode: 405, body: "Method Not Allowed" };
+  if (event.httpMethod !== "POST")    return { statusCode: 405, headers: CORS, body: "Method Not Allowed" };
 
   try {
     const { trainId, departureDate, closingTime } = JSON.parse(event.body ?? "{}");

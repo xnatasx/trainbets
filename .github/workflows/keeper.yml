@@ -5,10 +5,15 @@ on:
     - cron: "*/5 * * * *"   # every 5 minutes (GitHub Actions minimum)
   workflow_dispatch:          # allow manual trigger
 
+# Prevent two keeper runs from overlapping — queue the next one, don't cancel
+concurrency:
+  group: keeper
+  cancel-in-progress: false
+
 jobs:
   keeper:
     runs-on: ubuntu-latest
-    timeout-minutes: 4
+    timeout-minutes: 3
 
     steps:
       - uses: actions/checkout@v4
@@ -16,6 +21,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
+          cache: "npm"
 
       - name: Install dependencies
         run: npm install --no-package-lock
@@ -34,4 +40,4 @@ jobs:
         with:
           name: keeper-log-${{ github.run_id }}
           path: keeper.log
-          retention-days: 3
+          retention-days: 7

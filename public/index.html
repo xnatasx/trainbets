@@ -469,7 +469,10 @@ body.light .logo{color:#0f172a}
     <h2 id="modal-title">Lägg bet</h2>
     <div id="modal-sub"></div>
     <div id="modal-alert" style="display:none"></div>
-    <label class="form-label" id="amount-label">Insats (USDC)</label>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <label class="form-label" id="amount-label" style="margin-bottom:0">Insats (USDC)</label>
+      <span id="modal-balance" style="font-size:12px;color:var(--muted)"></span>
+    </div>
     <div class="input-wrap">
       <input type="number" id="amount-input" class="amount-input" min="1" step="1" value="5">
       <span class="input-suffix">USDC</span>
@@ -891,10 +894,11 @@ function renderMarkets() {
     return;
   }
 
-  // Pending / Resolved tabs: use on-chain markets only
+  // Pending / Resolved tabs: use on-chain markets only (last 7 days)
+  const weekAgo = n - 7 * 86400;
   const filters = {
-    pending:  m => m.outcome===0 && m.closingTime<=n && m.date===today,
-    resolved: m => m.outcome!==0 && m.date===today && (m.totalYes>0n||m.totalNo>0n),
+    pending:  m => m.outcome===0 && m.closingTime<=n && m.closingTime>=weekAgo,
+    resolved: m => m.outcome!==0 && m.closingTime>=weekAgo && (m.totalYes>0n||m.totalNo>0n),
   };
   const noMsg = { pending: t("noPending"), resolved: t("noResolved") };
   const visible = allMarkets.filter(filters[activeSubTab] || (() => false));
@@ -996,7 +1000,7 @@ function preMarketCard(tr, sig, fullId, date) {
       <div class="pool-bar"><div class="pool-yes" style="width:50%"></div><div class="pool-no" style="width:50%"></div></div>
       <div class="pool-amounts">
         <span class="pool-yes-val" style="opacity:.5;font-style:italic">${lang==="sv"?"Inga bet ännu":"No bets yet"}</span>
-        <span class="pool-no-val" style="opacity:.5;font-style:italic">∞×</span>
+        <span class="pool-no-val" style="opacity:.5;font-style:italic">${lang==="sv"?"Klicka för att betta":"Click to bet"}</span>
       </div>
     </div>
     <div class="bet-row">
@@ -1018,6 +1022,7 @@ async function openPreMarket(trainId, deptDate, closingTime, side) {
     : "🔴 "+t("nej")+" — "+route;
   document.getElementById("modal-sub").textContent = "Tåg "+trainId.split(" ")[0]+" · "+deptDate;
   document.getElementById("modal-alert").style.display = "none";
+  document.getElementById("modal-balance").textContent = "";
   document.getElementById("btn-approve").textContent = lang==="sv" ? "⏳ Skapar marknad…" : "⏳ Creating market…";
   document.getElementById("btn-approve").disabled = true;
   document.getElementById("btn-bet").textContent = t("betBtn");
@@ -1025,6 +1030,7 @@ async function openPreMarket(trainId, deptDate, closingTime, side) {
   document.getElementById("modal-step").textContent = lang==="sv" ? "Skapar marknad på kedjan…" : "Creating market on-chain…";
   updateModalInfo();
   document.getElementById("modal-overlay").classList.add("open");
+  loadModalBalance();
 
   // Create the on-chain market in background while user reads the modal
   try {
@@ -1103,6 +1109,7 @@ function openBetModal(marketId, side, m) {
     : "🔴 "+t("nej")+" — "+route;
   document.getElementById("modal-sub").textContent = "Tåg "+m.trainId.split(" ")[0]+" · "+m.date;
   document.getElementById("modal-alert").style.display = "none";
+  document.getElementById("modal-balance").textContent = "";
   document.getElementById("btn-approve").textContent = t("approveBtn");
   document.getElementById("btn-approve").disabled = false;
   document.getElementById("btn-bet").textContent = t("betBtn");
@@ -1110,6 +1117,23 @@ function openBetModal(marketId, side, m) {
   document.getElementById("modal-step").textContent = t("step1");
   updateModalInfo();
   document.getElementById("modal-overlay").classList.add("open");
+  // Load USDC balance async — shows user upfront if they have enough
+  loadModalBalance();
+}
+
+async function loadModalBalance() {
+  if (!account || !signer) return;
+  try {
+    const usdc = new ethers.Contract(USDC_ADDR, USDC_ABI, signer);
+    const bal  = await usdc.balanceOf(account);
+    const balNum = Number(bal) / 1e6;
+    const el = document.getElementById("modal-balance");
+    if (!el) return;
+    const label = lang === "sv" ? "Saldo" : "Balance";
+    const warn  = balNum < 1;
+    el.style.color = warn ? "var(--red)" : "var(--muted)";
+    el.textContent  = `${label}: ${balNum.toFixed(2)} USDC`;
+  } catch {}
 }
 
 function updateModalInfo() {
@@ -1117,10 +1141,31 @@ function updateModalInfo() {
   const fee = (amt*0.03).toFixed(2);
   const net = (amt*0.97).toFixed(2);
   const sek = (amt*SEK_RATE).toFixed(0);
+
+  // Calculate potential payout based on current pool + this new bet
+  let payoutRow = "";
+  const m = betModal?.market;
+  if (m && amt > 0) {
+    try {
+      const amtUnits  = BigInt(Math.round(amt * 1e6));
+      const totalYes  = m.totalYes ?? 0n;
+      const totalNo   = m.totalNo  ?? 0n;
+      const myPool    = (betModal.side === 1 ? totalYes : totalNo) + amtUnits;
+      const totalPool = totalYes + totalNo + amtUnits;
+      const payoutUnits = totalPool * 97n / 100n * amtUnits / myPool;
+      const payout    = Number(payoutUnits) / 1e6;
+      const mult      = amt > 0 ? (payout / amt).toFixed(2) : "—";
+      payoutRow = `<div class="modal-info-row" style="color:var(--green);font-weight:700">
+        <span class="modal-info-label" style="color:var(--green)">${lang==="sv"?"Möjlig vinst":"Potential payout"}</span>
+        <span>${payout.toFixed(2)} USDC (${mult}×)</span></div>`;
+    } catch {}
+  }
+
   document.getElementById("modal-info").innerHTML =
     `<div class="modal-info-row"><span class="modal-info-label">${lang==="sv"?"Insats":"Amount"}</span><span>${amt.toFixed(2)} USDC (~${sek} kr)</span></div>
      <div class="modal-info-row"><span class="modal-info-label">${t("feeLabel")}</span><span>-${fee} USDC</span></div>
-     <div class="modal-info-row"><span class="modal-info-label">${t("poolLabel")}</span><span>${net} USDC</span></div>`;
+     <div class="modal-info-row"><span class="modal-info-label">${t("poolLabel")}</span><span>${net} USDC</span></div>
+     ${payoutRow}`;
 }
 
 function showAlert(msg, err) {
@@ -1281,7 +1326,7 @@ if (localStorage.getItem("theme") === "light") {
 }
 init();
 refreshTicker();
-setInterval(init, 120_000);
+setInterval(init, 60_000);
 setInterval(refreshTicker, 60_000);
 </script>
 </body>

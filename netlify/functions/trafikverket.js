@@ -9,13 +9,21 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
+// Returns today's date (YYYY-MM-DD) and UTC offset string (+01:00 / +02:00) in Stockholm timezone
+function getStockholmDate() {
+  const now = new Date();
+  const date = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Stockholm" }).format(now);
+  const isCEST = new Intl.DateTimeFormat("en-US", { timeZone: "Europe/Stockholm", timeZoneName: "short" }).format(now).includes("CEST");
+  return { date, tz: isCEST ? "+02:00" : "+01:00" };
+}
+
 export async function handler(event) {
   if (event.httpMethod === "OPTIONS") {
     return { statusCode: 200, headers: CORS_HEADERS, body: "" };
   }
 
   if (event.httpMethod !== "POST") {
-    return { statusCode: 405, body: "Method Not Allowed" };
+    return { statusCode: 405, headers: CORS_HEADERS, body: "Method Not Allowed" };
   }
 
   try {
@@ -42,8 +50,8 @@ export async function handler(event) {
       };
     }
 
-    // Use CET date so it matches what Trafikverket serves
-    const dateStr = new Date().toLocaleDateString("sv-SE"); // "YYYY-MM-DD" in sv-SE locale
+    // Use Stockholm date/timezone so the query covers the right calendar day year-round (CET/CEST)
+    const { date: dateStr, tz } = getStockholmDate();
 
     const tvResponse = await fetch(TV_API, {
       method: "POST",
@@ -58,8 +66,8 @@ export async function handler(event) {
               AND: [
                 { EQ: [{ name: "ActivityType",             value: type    }] },
                 { EQ: [{ name: "LocationSignature",        value: station }] },
-                { GT: [{ name: "AdvertisedTimeAtLocation", value: dateStr + "T00:00:00.000+01:00" }] },
-                { LT: [{ name: "AdvertisedTimeAtLocation", value: dateStr + "T23:59:59.000+01:00" }] },
+                { GT: [{ name: "AdvertisedTimeAtLocation", value: dateStr + "T00:00:00.000" + tz }] },
+                { LT: [{ name: "AdvertisedTimeAtLocation", value: dateStr + "T23:59:59.000" + tz }] },
               ],
             },
             INCLUDE: [
@@ -147,7 +155,7 @@ export async function handler(event) {
       headers: {
         "Content-Type": "application/json",
         "Access-Control-Allow-Origin": "*",
-        "Cache-Control": "public, max-age=30",
+        "Cache-Control": "public, max-age=55",
       },
       body: JSON.stringify({ trains }),
     };
