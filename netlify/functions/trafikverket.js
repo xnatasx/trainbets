@@ -27,7 +27,14 @@ export async function handler(event) {
   }
 
   try {
-    const apiKey = process.env.TRAFIKVERKET_API_KEY || "4135d9b931704bf99d40ca7f84fcf9ad";
+    const apiKey = process.env.TRAFIKVERKET_API_KEY;
+    if (!apiKey) {
+      return {
+        statusCode: 500,
+        headers: { "Access-Control-Allow-Origin": "*" },
+        body: JSON.stringify({ error: "TRAFIKVERKET_API_KEY env var not set" }),
+      };
+    }
 
     let body;
     try {
