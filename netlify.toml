@@ -5,6 +5,10 @@
 
 [build.environment]
   NODE_VERSION = "20"
+  # RPC_URL is a public Base RPC endpoint, not a real secret.
+  # Netlify's scanner flags it because it's marked sensitive in the dashboard
+  # and its value (https://mainnet.base.org) appears as a fallback in source files.
+  SECRETS_SCAN_OMIT_KEYS = "RPC_URL"
 
 [functions]
   node_bundler = "esbuild"
