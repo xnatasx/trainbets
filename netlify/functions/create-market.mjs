@@ -66,10 +66,38 @@ export async function handler(event) {
     const expectedId = Number(await contract.createMarket.staticCall(
       trainId, departureDate, Number(closingTime)
     ));
+
     // Submit the real transaction — await submission but NOT mining (Base mines in ~2s)
-    // By the time the user enters a bet amount and clicks Approve, it will be confirmed.
     console.log(`[create-market] submitting: ${trainId} ${departureDate} closingTime=${closingTime} → expected marketId=${expectedId}`);
-    await contract.createMarket(trainId, departureDate, Number(closingTime), BASE_GAS);
+    try {
+      await contract.createMarket(trainId, departureDate, Number(closingTime), BASE_GAS);
+    } catch (txErr) {
+      // REPLACEMENT_UNDERPRICED means the oracle already submitted this exact transaction
+      // and it's pending in the mempool. Wait up to 8s for it to mine, then scan for the market.
+      if (txErr.code === "REPLACEMENT_UNDERPRICED" || txErr.message?.includes("replacement")) {
+        console.log(`[create-market] replacement underpriced — oracle tx already pending, waiting for it to mine...`);
+        await new Promise(r => setTimeout(r, 4000));
+        const count2 = Number(await contract.marketCount());
+        const start2 = Math.max(1, count2 - 9);
+        const scan2  = await Promise.allSettled(
+          Array.from({ length: count2 - start2 + 1 }, (_, i) => contract.getMarket(start2 + i))
+        );
+        for (let i = 0; i < scan2.length; i++) {
+          if (scan2[i].status === "fulfilled") {
+            const m = scan2[i].value;
+            if (m.trainId === trainId && m.departureDate === departureDate) {
+              const mid = start2 + i;
+              console.log(`[create-market] found after wait: marketId=${mid}`);
+              return { statusCode: 200, headers: CORS, body: JSON.stringify({ marketId: mid }) };
+            }
+          }
+        }
+        // If still not found, re-throw so the user sees a meaningful error
+        throw new Error("Oracle transaction is pending — please wait a few seconds and try again");
+      }
+      throw txErr;
+    }
+
     console.log(`[create-market] submitted marketId=${expectedId}`);
     return { statusCode: 200, headers: CORS, body: JSON.stringify({ marketId: expectedId }) };
 
