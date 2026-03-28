@@ -49,11 +49,14 @@ header{padding:16px 28px;border-bottom:1px solid var(--border);
 .dark-toggle{width:34px;height:34px;border-radius:50%;background:var(--surface);
   color:var(--text);border:1px solid var(--border);font-size:16px;
   display:flex;align-items:center;justify-content:center}
-#btn-wallet{padding:9px 20px;border-radius:10px;background:var(--accent);
-  color:#fff;font-weight:700;font-size:14px}
+#btn-wallet{padding:8px 18px;border-radius:10px;background:var(--accent);
+  color:#fff;font-weight:700;font-size:14px;line-height:1.3}
 #btn-wallet:hover{background:var(--accent2)}
 #btn-wallet.connected{background:rgba(59,130,246,.12);color:var(--accent2);
-  border:1px solid rgba(59,130,246,.25)}
+  border:1px solid rgba(59,130,246,.25);text-align:left}
+#btn-wallet-addr{display:block;font-size:13px;font-weight:700}
+#btn-wallet-bal{display:none;font-size:11px;font-weight:500;opacity:.8;
+  font-family:'Space Mono',monospace}
 /* Ticker */
 .ticker-wrap{overflow:hidden;background:rgba(0,0,0,.25);
   border-bottom:1px solid var(--border);height:36px;display:flex;align-items:center}
@@ -179,12 +182,28 @@ main{max-width:1120px;margin:0 auto;padding:32px 20px 80px}
 .contract-value{font-family:'Space Mono',monospace;font-size:13px;word-break:break-all}
 /* Profile */
 .profile-empty{text-align:center;padding:48px 20px;color:var(--muted);font-size:15px}
-.profile-stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px;margin-bottom:24px}
+.profile-empty-small{color:var(--muted);font-size:13px;padding:12px 0 24px;text-align:center}
+.profile-header{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start;margin-bottom:28px}
+.profile-wallet-box{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+  padding:18px 22px;min-width:220px}
+.profile-wallet-addr{font-family:'Space Mono',monospace;font-size:13px;font-weight:700;
+  color:var(--text);margin-bottom:4px}
+.profile-wallet-bal{font-family:'Space Mono',monospace;font-size:22px;font-weight:800;
+  color:var(--accent2);margin-bottom:8px}
+.profile-wallet-link{font-size:12px;color:var(--accent2);opacity:.7}
+.profile-wallet-link:hover{opacity:1}
+.profile-stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:12px;flex:1}
 .profile-stat{background:var(--card);border:1px solid var(--border);
-  border-radius:var(--radius);padding:16px 18px;text-align:center}
-.profile-stat-val{font-family:'Space Mono',monospace;font-size:22px;font-weight:700;
+  border-radius:var(--radius);padding:14px 16px;text-align:center}
+.profile-stat-val{font-family:'Space Mono',monospace;font-size:20px;font-weight:700;
   color:var(--accent2);display:block;margin-bottom:4px}
 .profile-stat-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.profile-section-title{font-size:13px;font-weight:700;text-transform:uppercase;
+  letter-spacing:.8px;color:var(--muted);margin:28px 0 14px;padding-bottom:8px;
+  border-bottom:1px solid var(--border)}
+.profile-claim-banner{background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.25);
+  color:var(--green);border-radius:10px;padding:12px 18px;font-weight:700;font-size:14px;
+  margin-bottom:20px}
 /* Modal */
 #modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);
   backdrop-filter:blur(6px);z-index:200;display:none;align-items:center;justify-content:center;padding:20px}
@@ -277,7 +296,7 @@ body.light .logo{color:#0f172a}
   <div class="header-right">
     <button class="lang-toggle" id="btn-lang">EN</button>
     <button class="dark-toggle" id="btn-dark">☀️</button>
-    <button id="btn-wallet">Anslut plånbok</button>
+    <button id="btn-wallet"><span id="btn-wallet-addr">Anslut plånbok</span><span id="btn-wallet-bal"></span></button>
   </div>
 </header>
 
@@ -620,9 +639,7 @@ const T = {
 const t = k => T[lang][k] ?? T.en[k] ?? k;
 
 function applyLang() {
-  document.getElementById("btn-wallet").textContent = account
-    ? account.slice(0,6) + "…" + account.slice(-4)
-    : t("connectWallet");
+  if (!account) document.getElementById("btn-wallet-addr").textContent = t("connectWallet");
   document.getElementById("hero-title").textContent   = t("heroTitle");
   document.getElementById("hero-sub").textContent     = t("heroSub");
   document.getElementById("live-badge-text").textContent = t("liveBadge");
@@ -1098,23 +1115,109 @@ async function openPreMarket(trainId, deptDate, closingTime, side) {
 
 function renderProfile() {
   const el = document.getElementById("profil-container");
-  if (!account) { el.innerHTML = `<div class="profile-empty">${t("profileConnect")}</div>`; return; }
-  const bets = allMarkets.filter(m => m.userBet?.amount>0n);
-  if (!bets.length) {
-    el.innerHTML = `<div class="profile-empty">${lang==="sv"?"Inga bet än. Gå till Marknader för att börja!":"No bets yet. Head to Markets to get started!"}</div>`;
+  if (!account) {
+    el.innerHTML = `<div class="profile-empty">${t("profileConnect")}</div>`;
     return;
   }
-  const totalBet = bets.reduce((s,m) => s+m.userBet.amount, 0n);
-  const wins = bets.filter(m => m.outcome!==0 && m.userBet.side===m.outcome).length;
-  const losses = bets.filter(m => m.outcome!==0 && m.userBet.side!==m.outcome).length;
+
+  const n   = nowSec();
+  const all = allMarkets.filter(m => m.userBet?.amount > 0n);
+
+  if (!all.length) {
+    el.innerHTML = `
+      <div class="profile-header">
+        <div class="profile-wallet-box">
+          <div class="profile-wallet-addr">${account.slice(0,8)}…${account.slice(-6)}</div>
+          <div class="profile-wallet-bal" id="profile-usdc-bal">— USDC</div>
+          <a href="https://basescan.org/address/${account}" target="_blank" class="profile-wallet-link">
+            ${lang==="sv"?"Visa på Basescan ↗":"View on Basescan ↗"}
+          </a>
+        </div>
+      </div>
+      <div class="profile-empty">${lang==="sv"?"Inga bet ännu. Gå till Marknader för att börja!":"No bets yet. Head to Markets to get started!"}</div>`;
+    refreshProfileBalance();
+    return;
+  }
+
+  // Categorise
+  const active   = all.filter(m => m.outcome===0 && m.closingTime > n);
+  const pending  = all.filter(m => m.outcome===0 && m.closingTime <= n);
+  const resolved = all.filter(m => m.outcome !== 0);
+  const wins     = resolved.filter(m => m.userBet.side === m.outcome);
+  const losses   = resolved.filter(m => m.userBet.side !== m.outcome);
+  const claimable= wins.filter(m => !m.userBet.claimed);
+
+  const totalBet    = all.reduce((s,m) => s + m.userBet.amount, 0n);
+  const totalClaimed= wins.filter(m=>m.userBet.claimed).length;
+
+  const section = (title, icon, items, emptyMsg) => {
+    if (!items.length) return `<div class="profile-section-title">${icon} ${title}</div><p class="profile-empty-small">${emptyMsg}</p>`;
+    return `<div class="profile-section-title">${icon} ${title}</div>
+      <div class="markets-grid">${items.map(marketCard).join("")}</div>`;
+  };
+
   el.innerHTML = `
-    <div class="profile-stats">
-      <div class="profile-stat"><span class="profile-stat-val">${bets.length}</span><span class="profile-stat-label">${lang==="sv"?"Totala bet":"Total Bets"}</span></div>
-      <div class="profile-stat"><span class="profile-stat-val">${fmtUSDC(totalBet)}</span><span class="profile-stat-label">${lang==="sv"?"Totalt satsat":"Total Wagered"}</span></div>
-      <div class="profile-stat"><span class="profile-stat-val" style="color:var(--green)">${wins}</span><span class="profile-stat-label">${lang==="sv"?"Vinster":"Wins"}</span></div>
-      <div class="profile-stat"><span class="profile-stat-val" style="color:var(--red)">${losses}</span><span class="profile-stat-label">${lang==="sv"?"Förluster":"Losses"}</span></div>
+    <div class="profile-header">
+      <div class="profile-wallet-box">
+        <div class="profile-wallet-addr">${account.slice(0,8)}…${account.slice(-6)}</div>
+        <div class="profile-wallet-bal" id="profile-usdc-bal">— USDC</div>
+        <a href="https://basescan.org/address/${account}" target="_blank" class="profile-wallet-link">
+          ${lang==="sv"?"Visa på Basescan ↗":"View on Basescan ↗"}
+        </a>
+      </div>
+      <div class="profile-stats">
+        <div class="profile-stat">
+          <span class="profile-stat-val">${all.length}</span>
+          <span class="profile-stat-label">${lang==="sv"?"Totala bet":"Total Bets"}</span>
+        </div>
+        <div class="profile-stat">
+          <span class="profile-stat-val">${fmtFull(totalBet)}</span>
+          <span class="profile-stat-label">${lang==="sv"?"Satsat":"Wagered"}</span>
+        </div>
+        <div class="profile-stat">
+          <span class="profile-stat-val" style="color:var(--green)">${wins.length}</span>
+          <span class="profile-stat-label">${lang==="sv"?"Vinster":"Wins"}</span>
+        </div>
+        <div class="profile-stat">
+          <span class="profile-stat-val" style="color:var(--red)">${losses.length}</span>
+          <span class="profile-stat-label">${lang==="sv"?"Förluster":"Losses"}</span>
+        </div>
+      </div>
     </div>
-    <div class="markets-grid">${bets.map(marketCard).join("")}</div>`;
+    ${claimable.length ? `<div class="profile-claim-banner">
+      💰 ${lang==="sv"
+        ? `Du har ${claimable.length} vinstbet att hämta!`
+        : `You have ${claimable.length} winning bet${claimable.length>1?"s":""} to claim!`}
+    </div>` : ""}
+    ${section(lang==="sv"?"Aktiva positioner":"Active Positions", "🟢", active,
+      lang==="sv"?"Inga öppna bet just nu.":"No open bets right now.")}
+    ${section(lang==="sv"?"Väntar på avgörande":"Awaiting Settlement", "⏳", pending,
+      lang==="sv"?"Inga bet väntar på avgörande.":"No bets awaiting settlement.")}
+    ${section(lang==="sv"?"Historik":"History", "📋", resolved,
+      lang==="sv"?"Inga avgjorda bet ännu.":"No resolved bets yet.")}`;
+
+  el.querySelectorAll("[data-bet-id]").forEach(btn =>
+    btn.addEventListener("click", () => {
+      const m = allMarkets.find(m => m.id === parseInt(btn.dataset.betId));
+      openBetModal(parseInt(btn.dataset.betId), parseInt(btn.dataset.side), m);
+    })
+  );
+  el.querySelectorAll("[data-claim-id]").forEach(btn =>
+    btn.addEventListener("click", () => claimWinnings(parseInt(btn.dataset.claimId)))
+  );
+
+  refreshProfileBalance();
+}
+
+async function refreshProfileBalance() {
+  if (!account || !signer) return;
+  try {
+    const usdc = new ethers.Contract(USDC_ADDR, USDC_ABI, signer);
+    const bal  = await usdc.balanceOf(account);
+    const fmt  = (Number(bal)/1e6).toFixed(2) + " USDC";
+    const el   = document.getElementById("profile-usdc-bal");
+    if (el) el.textContent = fmt;
+  } catch {}
 }
 
 // ═══ WALLET ════════════════════════════════════════════════════
@@ -1134,10 +1237,15 @@ async function connectWallet() {
     signer  = await provider.getSigner();
     account = await signer.getAddress();
     const btn = document.getElementById("btn-wallet");
-    btn.textContent = account.slice(0,6)+"…"+account.slice(-4);
+    document.getElementById("btn-wallet-addr").textContent = account.slice(0,6)+"…"+account.slice(-4);
+    document.getElementById("btn-wallet-bal").style.display = "block";
+    document.getElementById("btn-wallet-bal").textContent = "Laddar saldo…";
     btn.classList.add("connected");
+    // Clicking the connected wallet button navigates to Profile tab
+    btn.onclick = () => switchTab("profil");
     await loadUserBets(allMarkets);
     renderAllTabs();
+    refreshWalletBalance();
   } catch(err) {
     console.error("[Wallet]", err.message);
     // Don't alert for user-rejected requests (code 4001)
@@ -1145,6 +1253,26 @@ async function connectWallet() {
       showToast((lang==="sv"?"Plånboksfel: ":"Wallet error: ") + (err.reason||err.message||"Unknown error"), false);
     }
   }
+}
+
+async function refreshWalletBalance() {
+  if (!account || !signer) return;
+  try {
+    const usdc = new ethers.Contract(USDC_ADDR, USDC_ABI, signer);
+    const bal  = await usdc.balanceOf(account);
+    const el   = document.getElementById("btn-wallet-bal");
+    if (el) el.textContent = (Number(bal)/1e6).toFixed(2) + " USDC";
+  } catch {}
+}
+
+function switchTab(tab) {
+  document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+  document.querySelector(`.tab-btn[data-tab="${tab}"]`)?.classList.add("active");
+  ["marknader","stationer","howto","kontrakt","profil"].forEach(id =>
+    document.getElementById("tab-"+id).style.display = tab===id?"block":"none"
+  );
+  activeTab = tab;
+  renderAllTabs();
 }
 
 // ═══ BET MODAL ════════════════════════════════════════════════
@@ -1274,6 +1402,7 @@ async function doBet() {
     const c  = new ethers.Contract(CONTRACT, ABI, signer);
     await (await c.placeBet(BigInt(betModal.marketId), betModal.side, units)).wait();
     showAlert(t("betOk"), false);
+    refreshWalletBalance();
     setTimeout(()=>{ document.getElementById("modal-overlay").classList.remove("open"); init(); }, 2200);
   } catch(err) {
     btn.textContent = t("betBtn");
@@ -1294,7 +1423,7 @@ async function claimWinnings(marketId) {
 
 
 // ═══ EVENTS ═══════════════════════════════════════════════════
-document.getElementById("btn-wallet").addEventListener("click", connectWallet);
+// btn-wallet click handler set in init block below (handles both connect + navigate-to-profile)
 
 document.getElementById("btn-lang").addEventListener("click", () => {
   lang = lang==="sv" ? "en" : "sv";
@@ -1373,10 +1502,16 @@ if (localStorage.getItem("theme") === "light") {
   document.body.classList.add("light");
   document.getElementById("btn-dark").textContent = "🌙";
 }
+// Wallet button click when not yet connected
+document.getElementById("btn-wallet").addEventListener("click", function() {
+  if (!account) connectWallet();
+  // If connected, onclick is set in connectWallet() to switchTab("profil")
+});
 init();
 refreshTicker();
 setInterval(init, 60_000);
 setInterval(refreshTicker, 60_000);
+setInterval(() => { refreshWalletBalance(); if(activeTab==="profil") refreshProfileBalance(); }, 30_000);
 </script>
 </body>
 </html>
