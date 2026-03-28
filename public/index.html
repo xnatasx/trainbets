@@ -1403,7 +1403,11 @@ async function doBet() {
     await (await c.placeBet(BigInt(betModal.marketId), betModal.side, units)).wait();
     showAlert(t("betOk"), false);
     refreshWalletBalance();
-    setTimeout(()=>{ document.getElementById("modal-overlay").classList.remove("open"); init(); }, 2200);
+    setTimeout(async () => {
+      document.getElementById("modal-overlay").classList.remove("open");
+      await init();
+      switchTab("profil"); // Show the user their position immediately
+    }, 1800);
   } catch(err) {
     btn.textContent = t("betBtn");
     btn.disabled = false;

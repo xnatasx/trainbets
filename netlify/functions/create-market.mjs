@@ -72,28 +72,29 @@ export async function handler(event) {
     try {
       await contract.createMarket(trainId, departureDate, Number(closingTime), BASE_GAS);
     } catch (txErr) {
-      // REPLACEMENT_UNDERPRICED means the oracle already submitted this exact transaction
-      // and it's pending in the mempool. Wait up to 8s for it to mine, then scan for the market.
-      if (txErr.code === "REPLACEMENT_UNDERPRICED" || txErr.message?.includes("replacement")) {
-        console.log(`[create-market] replacement underpriced — oracle tx already pending, waiting for it to mine...`);
-        await new Promise(r => setTimeout(r, 4000));
-        const count2 = Number(await contract.marketCount());
-        const start2 = Math.max(1, count2 - 9);
-        const scan2  = await Promise.allSettled(
-          Array.from({ length: count2 - start2 + 1 }, (_, i) => contract.getMarket(start2 + i))
-        );
-        for (let i = 0; i < scan2.length; i++) {
-          if (scan2[i].status === "fulfilled") {
-            const m = scan2[i].value;
-            if (m.trainId === trainId && m.departureDate === departureDate) {
-              const mid = start2 + i;
-              console.log(`[create-market] found after wait: marketId=${mid}`);
-              return { statusCode: 200, headers: CORS, body: JSON.stringify({ marketId: mid }) };
+      // REPLACEMENT_UNDERPRICED / underpriced: the oracle wallet has a pending tx with the same
+      // nonce. Poll every 2s for up to 10s waiting for it to mine, then return the market ID.
+      if (txErr.code === "REPLACEMENT_UNDERPRICED" || txErr.message?.includes("replacement") || txErr.message?.includes("underpriced")) {
+        console.log(`[create-market] nonce collision — polling for oracle tx to mine (up to 10s)...`);
+        for (let attempt = 0; attempt < 5; attempt++) {
+          await new Promise(r => setTimeout(r, 2000));
+          const count2  = Number(await contract.marketCount());
+          const start2  = Math.max(1, count2 - 19); // scan last 20 to be safe
+          const scan2   = await Promise.allSettled(
+            Array.from({ length: count2 - start2 + 1 }, (_, i) => contract.getMarket(start2 + i))
+          );
+          for (let i = 0; i < scan2.length; i++) {
+            if (scan2[i].status === "fulfilled") {
+              const m = scan2[i].value;
+              if (m.trainId === trainId && m.departureDate === departureDate) {
+                const mid = start2 + i;
+                console.log(`[create-market] found after ${(attempt+1)*2}s: marketId=${mid}`);
+                return { statusCode: 200, headers: CORS, body: JSON.stringify({ marketId: mid }) };
+              }
             }
           }
         }
-        // If still not found, re-throw so the user sees a meaningful error
-        throw new Error("Oracle transaction is pending — please wait a few seconds and try again");
+        throw new Error("Oracle transaction still pending after 10s — please retry in a moment");
       }
       throw txErr;
     }
