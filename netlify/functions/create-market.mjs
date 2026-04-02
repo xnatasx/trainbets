@@ -62,42 +62,70 @@ export async function handler(event) {
       }
     }
 
-    // Predict the new marketId via staticCall (no gas, instant)
-    const expectedId = Number(await contract.createMarket.staticCall(
-      trainId, departureDate, Number(closingTime)
-    ));
+    // Helper: scan last N markets looking for this trainId+date
+    async function findMarket(scanSize = 20) {
+      const cnt = Number(await contract.marketCount());
+      const start = Math.max(1, cnt - scanSize + 1);
+      const results = await Promise.allSettled(
+        Array.from({ length: cnt - start + 1 }, (_, i) => contract.getMarket(start + i))
+      );
+      for (let i = 0; i < results.length; i++) {
+        if (results[i].status === "fulfilled") {
+          const m = results[i].value;
+          if (m.trainId === trainId && m.departureDate === departureDate) {
+            return start + i;
+          }
+        }
+      }
+      return null;
+    }
+
+    // Predict the new marketId via staticCall (no gas, instant).
+    // If staticCall itself reverts (oracle created the market between the dedup scan above and now),
+    // fall through to the poll loop below.
+    let expectedId;
+    try {
+      expectedId = Number(await contract.createMarket.staticCall(
+        trainId, departureDate, Number(closingTime)
+      ));
+    } catch (scErr) {
+      // staticCall failed — market was likely just created by the oracle; scan for it
+      console.log(`[create-market] staticCall reverted (${scErr.code}) — scanning for existing market...`);
+      const mid = await findMarket(20);
+      if (mid !== null) {
+        console.log(`[create-market] found immediately after staticCall fail: marketId=${mid}`);
+        return { statusCode: 200, headers: CORS, body: JSON.stringify({ marketId: mid }) };
+      }
+      throw new Error("Contract rejected market creation (closing time may have passed for this train)");
+    }
 
     // Submit the real transaction — await submission but NOT mining (Base mines in ~2s)
     console.log(`[create-market] submitting: ${trainId} ${departureDate} closingTime=${closingTime} → expected marketId=${expectedId}`);
     try {
       await contract.createMarket(trainId, departureDate, Number(closingTime), BASE_GAS);
     } catch (txErr) {
-      // REPLACEMENT_UNDERPRICED / underpriced: the oracle wallet has a pending tx with the same
-      // nonce. Poll every 2s for up to 10s waiting for it to mine, then return the market ID.
-      if (txErr.code === "REPLACEMENT_UNDERPRICED" || txErr.message?.includes("replacement") || txErr.message?.includes("underpriced")) {
-        console.log(`[create-market] nonce collision — polling for oracle tx to mine (up to 10s)...`);
-        for (let attempt = 0; attempt < 5; attempt++) {
-          await new Promise(r => setTimeout(r, 2000));
-          const count2  = Number(await contract.marketCount());
-          const start2  = Math.max(1, count2 - 19); // scan last 20 to be safe
-          const scan2   = await Promise.allSettled(
-            Array.from({ length: count2 - start2 + 1 }, (_, i) => contract.getMarket(start2 + i))
-          );
-          for (let i = 0; i < scan2.length; i++) {
-            if (scan2[i].status === "fulfilled") {
-              const m = scan2[i].value;
-              if (m.trainId === trainId && m.departureDate === departureDate) {
-                const mid = start2 + i;
-                console.log(`[create-market] found after ${(attempt+1)*2}s: marketId=${mid}`);
-                return { statusCode: 200, headers: CORS, body: JSON.stringify({ marketId: mid }) };
-              }
-            }
-          }
+      const isRace = txErr.code === "REPLACEMENT_UNDERPRICED"
+        || txErr.code === "CALL_EXCEPTION"
+        || txErr.message?.includes("replacement")
+        || txErr.message?.includes("underpriced")
+        || txErr.message?.includes("revert");
+      if (!isRace) throw txErr;
+
+      // Race with oracle: poll every 2s for up to 10s for the market to appear
+      console.log(`[create-market] race condition (${txErr.code}) — polling for market...`);
+      for (let attempt = 0; attempt < 5; attempt++) {
+        await new Promise(r => setTimeout(r, 2000));
+        const mid = await findMarket(20);
+        if (mid !== null) {
+          console.log(`[create-market] found after ${(attempt+1)*2}s: marketId=${mid}`);
+          return { statusCode: 200, headers: CORS, body: JSON.stringify({ marketId: mid }) };
         }
-        throw new Error("Oracle transaction still pending after 10s — please retry in a moment");
       }
-      throw txErr;
+      throw new Error("Market creation is taking longer than expected — please retry in a moment");
     }
+
+    console.log(`[create-market] submitted marketId=${expectedId}`);
+    return { statusCode: 200, headers: CORS, body: JSON.stringify({ marketId: expectedId }) };
 
     console.log(`[create-market] submitted marketId=${expectedId}`);
     return { statusCode: 200, headers: CORS, body: JSON.stringify({ marketId: expectedId }) };
