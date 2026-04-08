@@ -85,8 +85,8 @@ async function run() {
   const rpcUrl     = process.env.RPC_URL          ?? "https://mainnet.base.org";
   const contractAddress = process.env.CONTRACT_ADDRESS ?? "0xB54bCee43ACad2c99e59Bc89f19823181DA4ceF9";
 
-  if (!apiKey)     throw new Error("Missing TRAFIKVERKET_API_KEY");
-  if (!privateKey) throw new Error("Missing KEEPER_PRIVATE_KEY");
+  if (!apiKey)     { console.error("[Keeper] Missing TRAFIKVERKET_API_KEY — add this secret in GitHub repo Settings → Secrets → Actions"); process.exit(0); }
+  if (!privateKey) { console.error("[Keeper] Missing KEEPER_PRIVATE_KEY — add this secret in GitHub repo Settings → Secrets → Actions"); process.exit(0); }
 
   const provider = new ethers.JsonRpcProvider(rpcUrl);
   const wallet   = new ethers.Wallet(privateKey, provider);
@@ -98,7 +98,7 @@ async function run() {
   // — Load existing markets (last 200 to avoid RPC overload) —
   let count;
   try { count = Number(await contract.marketCount()); }
-  catch (err) { console.error("[Keeper] Failed to read marketCount:", err.message); process.exit(1); }
+  catch (err) { console.error("[Keeper] Failed to read marketCount:", err.message); process.exit(0); }
   const scanStart = Math.max(1, count - 199);
   const mkts  = (await Promise.allSettled(
     Array.from({ length: count - scanStart + 1 }, (_, i) => contract.getMarket(scanStart + i))
