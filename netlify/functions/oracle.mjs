@@ -21,10 +21,9 @@ const CONTRACT_ABI = [
   "function resolveMarket(uint256 marketId, uint8 outcome) external",
 ];
 
-const BASE_GAS = {
-  maxFeePerGas:         ethers.parseUnits("0.005", "gwei"),
-  maxPriorityFeePerGas: ethers.parseUnits("0.001", "gwei"),
-};
+// NOTE: BASE_GAS is defined inside oracleJob() — NOT at module scope.
+// Top-level ethers calls would crash the module on load and cause the scheduled
+// function handler to never register (same issue as was fixed in create-market.mjs).
 
 async function tvFetch(apiKey, objecttype, filter, includes, limit = 1000) {
   const r = await fetch(TV_API, {
@@ -76,7 +75,7 @@ async function fetchArrivalStatus(apiKey, trainIdent, destSig, departureDate) {
   return { arrived, delayMinutes, cancelled };
 }
 
-async function createMarkets(contract, apiKey) {
+async function createMarkets(contract, apiKey, BASE_GAS) {
   console.log("Creating markets...");
   const trains = await fetchTodayDepartures(apiKey);
   console.log('TV API returned', trains.length, 'departures');
@@ -115,7 +114,7 @@ async function createMarkets(contract, apiKey) {
   console.log("Created " + created + " new markets");
 }
 
-async function resolveMarkets(contract, apiKey) {
+async function resolveMarkets(contract, apiKey, BASE_GAS) {
   console.log("Resolving markets...");
   let count = 0;
   try { count = Number(await contract.marketCount()); } catch(e) { console.error('marketCount err: ' + e.message); return; }
@@ -163,12 +162,18 @@ const oracleJob = async () => {
     const contractAddress = process.env.CONTRACT_ADDRESS ?? "0xB54bCee43ACad2c99e59Bc89f19823181DA4ceF9";
     if (!apiKey)     throw new Error("Missing TRAFIKVERKET_API_KEY");
     if (!privateKey) throw new Error("Missing TREASURY_PRIVATE_KEY");
+    // Define gas params here (inside oracleJob) so ethers.parseUnits never runs at module load time.
+    // A top-level ethers call makes the scheduled handler fail to register silently.
+    const BASE_GAS = {
+      maxFeePerGas:         ethers.parseUnits("0.005", "gwei"),
+      maxPriorityFeePerGas: ethers.parseUnits("0.001", "gwei"),
+    };
     const provider = new ethers.JsonRpcProvider(rpcUrl);
     const wallet   = new ethers.Wallet(privateKey, provider);
     const contract = new ethers.Contract(contractAddress, CONTRACT_ABI, wallet);
     console.log("TrainBets Oracle v2 — wallet: " + wallet.address);
-    await createMarkets(contract, apiKey);
-    await resolveMarkets(contract, apiKey);
+    await createMarkets(contract, apiKey, BASE_GAS);
+    await resolveMarkets(contract, apiKey, BASE_GAS);
     console.log("Done");
   } catch (err) {
     console.error("Oracle error:", err.message);
