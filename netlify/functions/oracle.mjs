@@ -180,4 +180,4 @@ const oracleJob = async () => {
   }
 };
 
-export const handler = schedule("* * * * *", oracleJob);
+export const handler = schedule("*/5 * * * *", oracleJob);
