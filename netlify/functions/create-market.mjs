@@ -127,9 +127,6 @@ export async function handler(event) {
     console.log(`[create-market] submitted marketId=${expectedId}`);
     return { statusCode: 200, headers: CORS, body: JSON.stringify({ marketId: expectedId }) };
 
-    console.log(`[create-market] submitted marketId=${expectedId}`);
-    return { statusCode: 200, headers: CORS, body: JSON.stringify({ marketId: expectedId }) };
-
   } catch (err) {
     console.error("[create-market]", err.message);
     return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: err.message }) };

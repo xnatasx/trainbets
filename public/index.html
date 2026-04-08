@@ -1367,6 +1367,10 @@ function hideToast() {
 }
 
 async function doApprove() {
+  // Guard: when the button is wired as a "retry market creation" button (via onclick in
+  // openPreMarket), betModal.marketId is null. The addEventListener("click") still fires,
+  // but we must not run the USDC approval flow — the onclick retry handler takes over.
+  if (betModal.marketId === null) return;
   const btn = document.getElementById("btn-approve");
   document.getElementById("modal-alert").style.display = "none";
   try {
