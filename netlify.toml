@@ -2,6 +2,9 @@
   command   = "npm install"
   functions = "netlify/functions"
   publish   = "public"
+  # Only rebuild when files that Netlify actually serves change.
+  # Skips rebuilds for commits that only touch scripts/, .github/, CLAUDE.md, etc.
+  ignore    = "git diff --quiet HEAD~1 HEAD -- public/ netlify/"
 
 [build.environment]
   NODE_VERSION = "20"
