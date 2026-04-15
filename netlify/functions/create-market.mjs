@@ -15,6 +15,30 @@ const CORS = {
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
+// Multiple RPC endpoints — tried in order, first working one is used.
+// Matches the fallback list used in the frontend.
+const RPC_URLS = [
+  process.env.RPC_URL ?? "https://mainnet.base.org",
+  "https://base.llamarpc.com",
+  "https://base-rpc.publicnode.com",
+];
+
+async function getWalletAndContract(privateKey, contractAddress) {
+  for (const url of RPC_URLS) {
+    try {
+      const provider = new ethers.JsonRpcProvider(url);
+      await provider.getBlockNumber(); // probe — throws if unreachable
+      const wallet   = new ethers.Wallet(privateKey, provider);
+      const contract = new ethers.Contract(contractAddress, CONTRACT_ABI, wallet);
+      console.log(`[create-market] RPC: ${url} | wallet: ${wallet.address}`);
+      return { wallet, contract };
+    } catch (e) {
+      console.warn(`[create-market] RPC ${url} unreachable: ${e.message}`);
+    }
+  }
+  throw new Error("All RPC endpoints unavailable — please retry in a moment");
+}
+
 export async function handler(event) {
   if (event.httpMethod === "OPTIONS") return { statusCode: 200, headers: CORS, body: "" };
   if (event.httpMethod !== "POST")    return { statusCode: 405, headers: CORS, body: "Method Not Allowed" };
@@ -35,20 +59,17 @@ export async function handler(event) {
       maxPriorityFeePerGas: ethers.parseUnits("0.001", "gwei"),
     };
 
-    const rpcUrl          = process.env.RPC_URL          ?? "https://mainnet.base.org";
     const privateKey      = process.env.TREASURY_PRIVATE_KEY;
     const contractAddress = process.env.CONTRACT_ADDRESS ?? CONTRACT_ADDRESS;
     if (!privateKey) throw new Error("Missing TREASURY_PRIVATE_KEY — set this env var in Netlify dashboard");
 
-    const provider = new ethers.JsonRpcProvider(rpcUrl);
-    const wallet   = new ethers.Wallet(privateKey, provider);
-    const contract = new ethers.Contract(contractAddress, CONTRACT_ABI, wallet);
+    const { contract } = await getWalletAndContract(privateKey, contractAddress);
 
-    // Check if market already exists — return immediately if so (idempotent)
-    const count    = Number(await contract.marketCount());
-    // Scan only the most recent 50 markets — covers ~2 days at current creation rate
-    const scanStart = Math.max(1, count - 49);
-    const settled  = await Promise.allSettled(
+    // Check if market already exists — return immediately if so (idempotent).
+    // Scan last 200 markets (matches frontend/oracle/keeper scan size).
+    const count     = Number(await contract.marketCount());
+    const scanStart = Math.max(1, count - 199);
+    const settled   = await Promise.allSettled(
       Array.from({ length: count - scanStart + 1 }, (_, i) => contract.getMarket(scanStart + i))
     );
     for (let i = 0; i < settled.length; i++) {
@@ -63,8 +84,8 @@ export async function handler(event) {
     }
 
     // Helper: scan last N markets looking for this trainId+date
-    async function findMarket(scanSize = 20) {
-      const cnt = Number(await contract.marketCount());
+    async function findMarket(scanSize = 200) {
+      const cnt   = Number(await contract.marketCount());
       const start = Math.max(1, cnt - scanSize + 1);
       const results = await Promise.allSettled(
         Array.from({ length: cnt - start + 1 }, (_, i) => contract.getMarket(start + i))
@@ -72,28 +93,28 @@ export async function handler(event) {
       for (let i = 0; i < results.length; i++) {
         if (results[i].status === "fulfilled") {
           const m = results[i].value;
-          if (m.trainId === trainId && m.departureDate === departureDate) {
-            return start + i;
-          }
+          if (m.trainId === trainId && m.departureDate === departureDate) return start + i;
         }
       }
       return null;
     }
 
     // Predict the new marketId via staticCall (no gas, instant).
-    // If staticCall itself reverts (oracle created the market between the dedup scan above and now),
-    // fall through to the poll loop below.
+    // Only catch CALL_EXCEPTION (contract revert) here — network errors are re-thrown
+    // so the outer handler returns the real error rather than a misleading "closing time" message.
     let expectedId;
     try {
       expectedId = Number(await contract.createMarket.staticCall(
         trainId, departureDate, Number(closingTime)
       ));
     } catch (scErr) {
-      // staticCall failed — market was likely just created by the oracle; scan for it
-      console.log(`[create-market] staticCall reverted (${scErr.code}) — scanning for existing market...`);
-      const mid = await findMarket(20);
+      if (scErr.code !== "CALL_EXCEPTION") throw scErr; // network/RPC error — bubble up with real message
+
+      // Contract rejected — oracle may have just created this market; scan for it
+      console.log(`[create-market] staticCall CALL_EXCEPTION (reason: ${scErr.reason ?? scErr.message}) — scanning for existing market...`);
+      const mid = await findMarket();
       if (mid !== null) {
-        console.log(`[create-market] found immediately after staticCall fail: marketId=${mid}`);
+        console.log(`[create-market] found after staticCall fail: marketId=${mid}`);
         return { statusCode: 200, headers: CORS, body: JSON.stringify({ marketId: mid }) };
       }
       throw new Error("Contract rejected market creation (closing time may have passed for this train)");
@@ -115,9 +136,9 @@ export async function handler(event) {
       console.log(`[create-market] race condition (${txErr.code}) — polling for market...`);
       for (let attempt = 0; attempt < 5; attempt++) {
         await new Promise(r => setTimeout(r, 2000));
-        const mid = await findMarket(20);
+        const mid = await findMarket();
         if (mid !== null) {
-          console.log(`[create-market] found after ${(attempt+1)*2}s: marketId=${mid}`);
+          console.log(`[create-market] found after ${(attempt + 1) * 2}s: marketId=${mid}`);
           return { statusCode: 200, headers: CORS, body: JSON.stringify({ marketId: mid }) };
         }
       }
