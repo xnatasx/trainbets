@@ -27,13 +27,15 @@ async function getWalletAndContract(privateKey, contractAddress) {
   for (const url of RPC_URLS) {
     try {
       const provider = new ethers.JsonRpcProvider(url);
-      await provider.getBlockNumber(); // probe — throws if unreachable
       const wallet   = new ethers.Wallet(privateKey, provider);
       const contract = new ethers.Contract(contractAddress, CONTRACT_ABI, wallet);
-      console.log(`[create-market] RPC: ${url} | wallet: ${wallet.address}`);
-      return { wallet, contract };
+      // Use marketCount() as the probe — confirms eth_call works, not just eth_blockNumber.
+      // getBlockNumber() can succeed on a rate-limited RPC that still rejects eth_call.
+      const count = Number(await contract.marketCount());
+      console.log(`[create-market] RPC: ${url} | wallet: ${wallet.address} | marketCount: ${count}`);
+      return { wallet, contract, count };
     } catch (e) {
-      console.warn(`[create-market] RPC ${url} unreachable: ${e.message}`);
+      console.warn(`[create-market] RPC ${url} failed: ${e.message}`);
     }
   }
   throw new Error("All RPC endpoints unavailable — please retry in a moment");
@@ -63,11 +65,12 @@ export async function handler(event) {
     const contractAddress = process.env.CONTRACT_ADDRESS ?? CONTRACT_ADDRESS;
     if (!privateKey) throw new Error("Missing TREASURY_PRIVATE_KEY — set this env var in Netlify dashboard");
 
-    const { contract } = await getWalletAndContract(privateKey, contractAddress);
+    const { contract, count: marketCount } = await getWalletAndContract(privateKey, contractAddress);
 
     // Check if market already exists — return immediately if so (idempotent).
     // Scan last 200 markets (matches frontend/oracle/keeper scan size).
-    const count     = Number(await contract.marketCount());
+    // count comes from the RPC probe in getWalletAndContract — no second call needed.
+    const count     = marketCount;
     const scanStart = Math.max(1, count - 199);
     const settled   = await Promise.allSettled(
       Array.from({ length: count - scanStart + 1 }, (_, i) => contract.getMarket(scanStart + i))
