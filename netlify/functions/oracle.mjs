@@ -154,11 +154,40 @@ async function resolveMarkets(contract, apiKey, BASE_GAS) {
   console.log("Resolved " + resolved + " markets");
 }
 
+// Try each RPC until one can actually serve eth_call (probed via marketCount).
+// Public Base RPCs sometimes throttle eth_call while still serving eth_blockNumber,
+// so we must probe with a real contract call, not getBlockNumber().
+const RPC_URLS = [
+  process.env.RPC_URL ?? "https://mainnet.base.org",
+  "https://base.llamarpc.com",
+  "https://base-rpc.publicnode.com",
+  "https://rpc.ankr.com/base",
+  "https://1rpc.io/base",
+];
+
+async function connectToChain(privateKey, contractAddress) {
+  for (const url of RPC_URLS) {
+    try {
+      const provider = new ethers.JsonRpcProvider(url);
+      const wallet   = new ethers.Wallet(privateKey, provider);
+      const contract = new ethers.Contract(contractAddress, CONTRACT_ABI, wallet);
+      const count = await Promise.race([
+        contract.marketCount(),
+        new Promise((_, rej) => setTimeout(() => rej(new Error("probe timeout")), 4000)),
+      ]);
+      console.log(`[Oracle] RPC: ${url} | wallet: ${wallet.address} | marketCount: ${count}`);
+      return { wallet, contract };
+    } catch (e) {
+      console.warn(`[Oracle] RPC ${url} failed: ${e.message}`);
+    }
+  }
+  throw new Error("All RPC endpoints unavailable");
+}
+
 const oracleJob = async () => {
   try {
     const apiKey          = process.env.TRAFIKVERKET_API_KEY;
     const privateKey      = process.env.TREASURY_PRIVATE_KEY;
-    const rpcUrl          = process.env.RPC_URL          ?? "https://mainnet.base.org";
     const contractAddress = process.env.CONTRACT_ADDRESS ?? "0xB54bCee43ACad2c99e59Bc89f19823181DA4ceF9";
     if (!apiKey)     throw new Error("Missing TRAFIKVERKET_API_KEY");
     if (!privateKey) throw new Error("Missing TREASURY_PRIVATE_KEY");
@@ -168,10 +197,7 @@ const oracleJob = async () => {
       maxFeePerGas:         ethers.parseUnits("0.005", "gwei"),
       maxPriorityFeePerGas: ethers.parseUnits("0.001", "gwei"),
     };
-    const provider = new ethers.JsonRpcProvider(rpcUrl);
-    const wallet   = new ethers.Wallet(privateKey, provider);
-    const contract = new ethers.Contract(contractAddress, CONTRACT_ABI, wallet);
-    console.log("TrainBets Oracle v2 — wallet: " + wallet.address);
+    const { contract } = await connectToChain(privateKey, contractAddress);
     await createMarkets(contract, apiKey, BASE_GAS);
     await resolveMarkets(contract, apiKey, BASE_GAS);
     console.log("Done");
