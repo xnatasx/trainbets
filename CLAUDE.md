@@ -15,10 +15,11 @@ This file provides context and conventions for AI assistants working in this rep
 ```
 trainbets/
 ├── public/
-│   └── index.html              # Complete frontend SPA (HTML + CSS + JS, ~1,100 lines)
+│   └── index.html              # Complete frontend SPA (HTML + CSS + JS, ~1,500 lines)
 ├── netlify/
 │   └── functions/
-│       ├── oracle.mjs          # Netlify scheduled oracle (1-min cron)
+│       ├── oracle.mjs          # Netlify scheduled oracle (5-min cron)
+│       ├── create-market.mjs   # On-demand market creation (called by frontend)
 │       └── trafikverket.js     # CORS proxy for Trafikverket API
 ├── scripts/
 │   └── keeper.mjs              # Standalone oracle for GitHub Actions (backup)
@@ -27,6 +28,7 @@ trainbets/
 │       └── keeper.yml          # GitHub Actions CI/CD (runs keeper every 5 min)
 ├── netlify.toml                # Netlify build & function config
 ├── package.json                # Node.js dependencies (ethers + @netlify/functions)
+├── TASKS.md                    # Outstanding / verification tasks log
 └── CLAUDE.md                   # This file
 ```
 
@@ -41,7 +43,7 @@ trainbets/
 | Smart Contracts | Solidity (deployed externally, ABI embedded in frontend/oracle) |
 | Payment Token | USDC (`0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`) |
 | Web3 Library | ethers.js v6 |
-| Oracle / Keeper | Netlify Functions (1-min cron) + GitHub Actions (5-min cron) |
+| Oracle / Keeper | Netlify Functions (5-min cron) + GitHub Actions (5-min cron) |
 | Data Source | Trafikverket API (official Swedish rail data) |
 | Hosting | Netlify (static site + serverless functions) |
 
@@ -85,14 +87,12 @@ Son  → Sundsvall
 | Variable | Required By | Purpose |
 |---|---|---|
 | `TRAFIKVERKET_API_KEY` | `trafikverket.js`, `oracle.mjs`, `keeper.mjs` | Auth for Trafikverket REST API |
-| `TREASURY_PRIVATE_KEY` | `oracle.mjs` | Wallet private key for Netlify oracle transactions |
+| `TREASURY_PRIVATE_KEY` | `oracle.mjs`, `create-market.mjs` | Wallet private key for Netlify oracle transactions |
 | `KEEPER_PRIVATE_KEY` | `keeper.mjs`, GitHub Actions | Wallet private key for GitHub Actions keeper |
-| `RPC_URL` | `oracle.mjs`, `keeper.mjs` | Base RPC endpoint (default: `https://mainnet.base.org`) |
-| `CONTRACT_ADDRESS` | `oracle.mjs`, `keeper.mjs` | Override default contract address |
+| `RPC_URL` | `oracle.mjs`, `keeper.mjs`, `create-market.mjs` | Base RPC endpoint (default: `https://mainnet.base.org`, with public-RPC fallbacks) |
+| `CONTRACT_ADDRESS` | `oracle.mjs`, `keeper.mjs`, `create-market.mjs` | Override default contract address |
 
 **Never commit private keys or API keys.** Use Netlify environment variables and GitHub Actions secrets.
-
-Note: `trafikverket.js` contains a hardcoded fallback API key — prefer the env variable.
 
 ---
 
@@ -105,11 +105,12 @@ User Browser (index.html)
   │       └─→ Trafikverket API (train schedule data)
   │
   └─→ Base Blockchain (ethers.js via MetaMask/Rabby)
-          └─→ Smart Contract 0xa0caae...
+          └─→ Smart Contract 0xB54b…cef9
                   ↑
          Oracle / Keeper (two systems, same logic)
-            ├── Netlify oracle.mjs  (1-min cron via scheduled function)
-            └── scripts/keeper.mjs (5-min cron via GitHub Actions)
+            ├── Netlify oracle.mjs       (5-min cron via scheduled function)
+            ├── Netlify create-market.mjs (on-demand, invoked by frontend pre-bet)
+            └── scripts/keeper.mjs       (5-min cron via GitHub Actions)
                     └─→ Trafikverket API (resolves actual arrival data)
 ```
 
@@ -169,7 +170,7 @@ Base is cheap; these values are intentionally low.
 
 ## Frontend (public/index.html)
 
-The entire frontend is a single self-contained HTML file (~1,100 lines). It includes:
+The entire frontend is a single self-contained HTML file (~1,500 lines). It includes:
 
 - Embedded CSS (styles in `<style>` tag)
 - Embedded JavaScript (app logic in `<script>` tag)
@@ -203,17 +204,18 @@ The frontend (`public/index.html`) can be opened directly in a browser for UI wo
 
 ### Deployment
 
-Push to `master` branch → Netlify auto-deploys.
+Push to `main` branch → Netlify auto-deploys.
 
 - Static site from `public/`
 - Functions bundled with esbuild from `netlify/functions/`
+- Build is skipped when a commit only touches files outside `public/` and `netlify/` (see `netlify.toml` `ignore` rule) — e.g. changes to `scripts/`, `.github/`, `CLAUDE.md`, or `TASKS.md` do not trigger a rebuild.
 
 ### Oracle / Keeper
 
-- **Netlify oracle** runs automatically on 1-minute cron via `schedule` export in `oracle.mjs`
+- **Netlify oracle** runs automatically on a 5-minute cron via `schedule` export in `oracle.mjs`
 - **GitHub Actions keeper** runs every 5 minutes via `keeper.yml`, also triggerable manually via `workflow_dispatch`
 
-Both systems are intentionally redundant.
+Both systems are intentionally redundant. The frontend additionally invokes `create-market.mjs` on demand the first time a user opens a pre-market bet modal, so a market can be created before the next oracle tick.
 
 ---
 
@@ -232,10 +234,11 @@ Both systems are intentionally redundant.
 
 ### Update the smart contract address
 
-Update in three places:
+Update in four places:
 1. `public/index.html` — `const CONTRACT = "0x..."`
-2. `netlify/functions/oracle.mjs` — `const CONTRACT_ADDRESS`
-3. `scripts/keeper.mjs` — `const CONTRACT_ADDRESS`
+2. `netlify/functions/oracle.mjs` — default in `oracleJob()`
+3. `netlify/functions/create-market.mjs` — `const CONTRACT_ADDRESS`
+4. `scripts/keeper.mjs` — default in `run()`
 
 Also update the default in `.github/workflows/keeper.yml` if hardcoded there.
 
@@ -257,7 +260,7 @@ Check Netlify Function logs in the Netlify dashboard, or trigger the GitHub Acti
 ## Security Notes
 
 - Private keys (`TREASURY_PRIVATE_KEY`, `KEEPER_PRIVATE_KEY`) must only live in Netlify environment variables and GitHub Actions secrets — never in source code
-- `trafikverket.js` contains a hardcoded fallback API key; remove it and enforce the env variable if possible
+- `trafikverket.js` requires `TRAFIKVERKET_API_KEY` from the environment and returns a 500 if it's missing (no hardcoded fallback)
 - The CORS proxy (`trafikverket.js`) allows all origins — acceptable for a public dApp, but be aware
 - No input validation on the proxy; it forwards arbitrary POST bodies to Trafikverket (low risk since the API key scopes access)
 
