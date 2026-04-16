@@ -57,10 +57,14 @@ export async function handler(event) {
       };
     }
 
-    // Use Stockholm date/timezone so the query covers the right calendar day year-round (CET/CEST)
-    const { date: dateStr, tz } = getStockholmDate();
+    // Use Stockholm date/timezone so the query covers the right calendar day year-round (CET/CEST).
+    // Fetch today AND tomorrow so the ticker still has upcoming departures late in the evening
+    // and across midnight. Matches the oracle's behavior in oracle.mjs.
+    const { date: today, tz } = getStockholmDate();
+    const tomorrow = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Stockholm" })
+      .format(new Date(Date.now() + 86400000));
 
-    const tvResponse = await fetch(TV_API, {
+    const fetchDay = (dateStr) => fetch(TV_API, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -95,30 +99,39 @@ export async function handler(event) {
       }),
     });
 
-    if (!tvResponse.ok) {
-      const text = await tvResponse.text();
-      console.error("[trafikverket proxy] API error", tvResponse.status, text.slice(0, 500));
-      return {
-        statusCode: tvResponse.status,
-        headers: { "Access-Control-Allow-Origin": "*" },
-        body: JSON.stringify({ error: "Trafikverket API error", status: tvResponse.status }),
-      };
+    const [todayRes, tomorrowRes] = await Promise.all([fetchDay(today), fetchDay(tomorrow)]);
+
+    for (const r of [todayRes, tomorrowRes]) {
+      if (!r.ok) {
+        const text = await r.text();
+        console.error("[trafikverket proxy] API error", r.status, text.slice(0, 500));
+        return {
+          statusCode: r.status,
+          headers: { "Access-Control-Allow-Origin": "*" },
+          body: JSON.stringify({ error: "Trafikverket API error", status: r.status }),
+        };
+      }
     }
 
-    const data = await tvResponse.json();
+    const [todayData, tomorrowData] = await Promise.all([todayRes.json(), tomorrowRes.json()]);
 
     // Surface any API-level errors from Trafikverket
-    const apiError = data?.RESPONSE?.RESULT?.[0]?.ERROR;
-    if (apiError) {
-      console.error("[trafikverket proxy] Trafikverket query error:", JSON.stringify(apiError));
-      return {
-        statusCode: 502,
-        headers: { "Access-Control-Allow-Origin": "*" },
-        body: JSON.stringify({ error: "Trafikverket query error", details: apiError }),
-      };
+    for (const d of [todayData, tomorrowData]) {
+      const apiError = d?.RESPONSE?.RESULT?.[0]?.ERROR;
+      if (apiError) {
+        console.error("[trafikverket proxy] Trafikverket query error:", JSON.stringify(apiError));
+        return {
+          statusCode: 502,
+          headers: { "Access-Control-Allow-Origin": "*" },
+          body: JSON.stringify({ error: "Trafikverket query error", details: apiError }),
+        };
+      }
     }
 
-    const announcements = data?.RESPONSE?.RESULT?.[0]?.TrainAnnouncement ?? [];
+    const announcements = [
+      ...(todayData?.RESPONSE?.RESULT?.[0]?.TrainAnnouncement ?? []),
+      ...(tomorrowData?.RESPONSE?.RESULT?.[0]?.TrainAnnouncement ?? []),
+    ];
 
     // Map raw TrainAnnouncement objects to clean train objects
     const trains = announcements.map(a => {
@@ -155,7 +168,7 @@ export async function handler(event) {
       };
     });
 
-    console.log(`[trafikverket proxy] ${station} ${type}: ${trains.length} announcements`);
+    console.log(`[trafikverket proxy] ${station} ${type} (${today}+${tomorrow}): ${trains.length} announcements`);
 
     return {
       statusCode: 200,
