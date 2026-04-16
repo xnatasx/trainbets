@@ -21,7 +21,18 @@ const RPC_URLS = [
   process.env.RPC_URL ?? "https://mainnet.base.org",
   "https://base.llamarpc.com",
   "https://base-rpc.publicnode.com",
+  "https://rpc.ankr.com/base",
+  "https://1rpc.io/base",
 ];
+
+// Probe an RPC by calling marketCount() with a 4s timeout.
+// getBlockNumber() can pass on a node that throttles eth_call, so we use a real contract call.
+async function probeRpc(contract) {
+  return Promise.race([
+    contract.marketCount(),
+    new Promise((_, rej) => setTimeout(() => rej(new Error("probe timeout")), 4000)),
+  ]);
+}
 
 async function getWalletAndContract(privateKey, contractAddress) {
   for (const url of RPC_URLS) {
@@ -29,9 +40,7 @@ async function getWalletAndContract(privateKey, contractAddress) {
       const provider = new ethers.JsonRpcProvider(url);
       const wallet   = new ethers.Wallet(privateKey, provider);
       const contract = new ethers.Contract(contractAddress, CONTRACT_ABI, wallet);
-      // Use marketCount() as the probe — confirms eth_call works, not just eth_blockNumber.
-      // getBlockNumber() can succeed on a rate-limited RPC that still rejects eth_call.
-      const count = Number(await contract.marketCount());
+      const count = Number(await probeRpc(contract));
       console.log(`[create-market] RPC: ${url} | wallet: ${wallet.address} | marketCount: ${count}`);
       return { wallet, contract, count };
     } catch (e) {
