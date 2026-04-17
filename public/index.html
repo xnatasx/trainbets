@@ -583,11 +583,11 @@ const T = {
     s1t:"Anslut din plånbok",
     s1d:"Anslut MetaMask eller Rabby Wallet. Byt till Base-nätverket (Chain ID 8453). Du behöver USDC på Base.",
     s2t:"Välj en marknad",
-    s2d:"Marknader skapas dagligen kl. 06:00 för intercitytåg. Varje marknad = ett specifikt tåg och dess ankomsttid.",
+    s2d:"Marknader skapas löpande för avgångar inom 8 h. Varje marknad = ett specifikt tåg och dess ankomsttid. Betting stänger 30 min före avgång.",
     s3t:"Lägg ditt bet",
     s3d:"Betta JA (i tid, ≤5 min) eller NEJ (försenad). Minibet: 1 USDC. Avgift: 3%.",
     s4t:"Automatisk avräkning",
-    s4d:"Oraklet hämtar data från Trafikverket och avgör marknaden 30 min efter schemalagd avgång.",
+    s4d:"Oraklet hämtar data från Trafikverket och avgör marknaden så snart tåget har ankommit destinationen.",
     s5t:"Hämta dina vinster",
     s5d:"Hämta USDC direkt på kedjan. Inga mellanhänder, direkta utbetalningar.",
     s6t:"Passiv inkomst",
@@ -623,11 +623,11 @@ const T = {
     s1t:"Connect Your Wallet",
     s1d:"Connect MetaMask or Rabby Wallet. Switch to Base network (Chain ID 8453). You need USDC on Base.",
     s2t:"Choose a Market",
-    s2d:"Markets are created daily at 06:00 for intercity trains. Each market = a specific train and arrival time.",
+    s2d:"Markets are created on the fly for departures within 8 h. Each market = a specific train and arrival time. Betting closes 30 min before departure.",
     s3t:"Place Your Bet",
     s3d:"Bet YES (on time, ≤5 min) or NO (delayed). Min bet: 1 USDC. Fee: 3%.",
     s4t:"Automatic Settlement",
-    s4d:"The oracle fetches Trafikverket data and settles the market 30 min after scheduled departure.",
+    s4d:"The oracle fetches Trafikverket data and settles the market as soon as the train reaches its destination.",
     s5t:"Claim Your Winnings",
     s5d:"Claim USDC directly on-chain. No intermediaries, instant payouts.",
     s6t:"Passive Income",
@@ -705,10 +705,16 @@ function getOdds(mine, other) {
 const nowSec = () => Math.floor(Date.now()/1000);
 
 // ═══ CHAIN READ ═══════════════════════════════════════════════
+// Mirror backend RPC list (oracle.mjs / create-market.mjs) so frontend
+// survives any single-RPC outage. Public Base RPCs occasionally throttle
+// eth_call while still answering eth_blockNumber, so we must probe with
+// a real contract read (marketCount), not getBlockNumber.
 const RPC_URLS = [
   "https://mainnet.base.org",
   "https://base.llamarpc.com",
   "https://base-rpc.publicnode.com",
+  "https://rpc.ankr.com/base",
+  "https://1rpc.io/base",
 ];
 
 async function getWorkingContract() {
@@ -716,22 +722,21 @@ async function getWorkingContract() {
     try {
       const rpc = new ethers.JsonRpcProvider(url);
       const c   = new ethers.Contract(CONTRACT, ABI, rpc);
-      // Probe with a lightweight call
-      await rpc.getBlockNumber();
-      return c;
-    } catch {}
+      // Probe with a real contract call on a 4s timeout — matches backend behavior.
+      const count = await Promise.race([
+        c.marketCount(),
+        new Promise((_, rej) => setTimeout(() => rej(new Error("probe timeout")), 4000)),
+      ]);
+      return { contract: c, count: Number(count) };
+    } catch (e) {
+      console.warn("[RPC] skipped", url, e.message);
+    }
   }
   throw new Error("Alla RPC-noder otillgängliga. Försök igen senare.");
 }
 
 async function loadMarkets() {
-  const c = await getWorkingContract();
-  let n;
-  try {
-    n = Number(await c.marketCount());
-  } catch(err) {
-    throw new Error("Kontraktet svarar inte: " + err.message);
-  }
+  const { contract: c, count: n } = await getWorkingContract();
   if (!n) return [];
   // Scan only the last 200 markets to avoid overwhelming the RPC endpoint
   const scanStart = Math.max(1, n - 199);
@@ -750,7 +755,7 @@ async function loadMarkets() {
 async function loadUserBets(markets) {
   if (!account) return;
   let c;
-  try { c = await getWorkingContract(); } catch { return; }
+  try { ({ contract: c } = await getWorkingContract()); } catch { return; }
   await Promise.allSettled(markets.map(async m => {
     try {
       const b = await c.getUserBet(BigInt(m.id), account);
@@ -1517,9 +1522,24 @@ document.getElementById("btn-wallet").addEventListener("click", function() {
 });
 init();
 refreshTicker();
-setInterval(init, 60_000);
-setInterval(refreshTicker, 60_000);
-setInterval(() => { refreshWalletBalance(); if(activeTab==="profil") refreshProfileBalance(); }, 30_000);
+
+// Poll only while the tab is visible. Hidden tabs were hitting
+// /.netlify/functions/trafikverket every 60 s forever, which burned Netlify
+// function minutes for zero user benefit.
+function whenVisible(fn, everyMs) {
+  let id = null;
+  const start = () => { if (id == null) id = setInterval(fn, everyMs); };
+  const stop  = () => { if (id != null) { clearInterval(id); id = null; } };
+  if (!document.hidden) start();
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) stop();
+    else { fn(); start(); } // refresh once on return, then resume polling
+  });
+}
+
+whenVisible(init,           60_000);
+whenVisible(refreshTicker,  60_000);
+whenVisible(() => { refreshWalletBalance(); if (activeTab === "profil") refreshProfileBalance(); }, 30_000);
 </script>
 </body>
 </html>

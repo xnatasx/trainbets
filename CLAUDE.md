@@ -61,7 +61,7 @@ CHAIN_ID         = 8453
 USDC_DECIMALS    = 6
 DELAY_THRESHOLD  = 5 minutes  (≥5 min delay → DELAYED; <5 min → ON_TIME)
 LOOKAHEAD_HOURS  = 8          (only create markets for departures within 8 hours)
-CLOSING_OFFSET   = 30 min after scheduled departure
+CLOSING_OFFSET   = 30 min BEFORE scheduled departure (betting cutoff)
 PLATFORM_FEE     = 3%
 ```
 
