@@ -75,14 +75,12 @@ async function fetchArrivalStatus(apiKey, trainIdent, destSig, departureDate) {
   return { arrived, delayMinutes, cancelled };
 }
 
-async function createMarkets(contract, apiKey, BASE_GAS) {
+async function createMarkets(contract, count, apiKey, BASE_GAS) {
   console.log("Creating markets...");
   const trains = await fetchTodayDepartures(apiKey);
   console.log('TV API returned', trains.length, 'departures');
   const now    = Date.now();
   const cutoff = now + MARKET_LOOKAHEAD_HOURS * 3600000;
-  let count = 0;
-  try { count = Number(await contract.marketCount()); } catch(e) { console.error('marketCount err: ' + e.message); return; }
   // Only scan the most recent 200 markets — older ones can't conflict with upcoming departures
   const scanStart = Math.max(1, count - 199);
   const settled1 = await Promise.allSettled(
@@ -114,10 +112,8 @@ async function createMarkets(contract, apiKey, BASE_GAS) {
   console.log("Created " + created + " new markets");
 }
 
-async function resolveMarkets(contract, apiKey, BASE_GAS) {
+async function resolveMarkets(contract, count, apiKey, BASE_GAS) {
   console.log("Resolving markets...");
-  let count = 0;
-  try { count = Number(await contract.marketCount()); } catch(e) { console.error('marketCount err: ' + e.message); return; }
   const now     = Math.floor(Date.now() / 1000);
   // Scan last 200 markets — unresolved markets older than 48h are skipped anyway
   const scanStart2 = Math.max(1, count - 199);
@@ -176,7 +172,7 @@ async function connectToChain(privateKey, contractAddress) {
         new Promise((_, rej) => setTimeout(() => rej(new Error("probe timeout")), 4000)),
       ]);
       console.log(`[Oracle] RPC: ${url} | wallet: ${wallet.address} | marketCount: ${count}`);
-      return { wallet, contract };
+      return { wallet, contract, count: Number(count) };
     } catch (e) {
       console.warn(`[Oracle] RPC ${url} failed: ${e.message}`);
     }
@@ -197,9 +193,9 @@ const oracleJob = async () => {
       maxFeePerGas:         ethers.parseUnits("0.005", "gwei"),
       maxPriorityFeePerGas: ethers.parseUnits("0.001", "gwei"),
     };
-    const { contract } = await connectToChain(privateKey, contractAddress);
-    await createMarkets(contract, apiKey, BASE_GAS);
-    await resolveMarkets(contract, apiKey, BASE_GAS);
+    const { contract, count } = await connectToChain(privateKey, contractAddress);
+    await createMarkets(contract, count, apiKey, BASE_GAS);
+    await resolveMarkets(contract, count, apiKey, BASE_GAS);
     console.log("Done");
   } catch (err) {
     console.error("Oracle error:", err.message);

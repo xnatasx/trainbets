@@ -79,26 +79,53 @@ async function fetchArrival(apiKey, trainIdent, destSig, departureDate) {
   return { arrived: !!ann.TimeAtLocation, delayMinutes: delay, cancelled: ann.Canceled === true };
 }
 
+// Try each RPC until one can serve eth_call (probed via marketCount).
+// Public Base RPCs sometimes throttle eth_call while still serving eth_blockNumber,
+// so we probe with a real contract call, not getBlockNumber().
+const RPC_URLS = [
+  process.env.RPC_URL ?? "https://mainnet.base.org",
+  "https://base.llamarpc.com",
+  "https://base-rpc.publicnode.com",
+  "https://rpc.ankr.com/base",
+  "https://1rpc.io/base",
+];
+
+async function connectToChain(privateKey, contractAddress) {
+  for (const url of RPC_URLS) {
+    try {
+      const provider = new ethers.JsonRpcProvider(url);
+      const wallet   = new ethers.Wallet(privateKey, provider);
+      const contract = new ethers.Contract(contractAddress, ABI, wallet);
+      const count = await Promise.race([
+        contract.marketCount(),
+        new Promise((_, rej) => setTimeout(() => rej(new Error("probe timeout")), 4000)),
+      ]);
+      console.log(`[Keeper] RPC: ${url} | wallet: ${wallet.address} | marketCount: ${count}`);
+      return { wallet, contract, count: Number(count) };
+    } catch (e) {
+      console.warn(`[Keeper] RPC ${url} failed: ${e.message}`);
+    }
+  }
+  throw new Error("All RPC endpoints unavailable");
+}
+
 async function run() {
   const apiKey     = process.env.TRAFIKVERKET_API_KEY;
   const privateKey = process.env.KEEPER_PRIVATE_KEY;
-  const rpcUrl     = process.env.RPC_URL          ?? "https://mainnet.base.org";
   const contractAddress = process.env.CONTRACT_ADDRESS ?? "0xB54bCee43ACad2c99e59Bc89f19823181DA4ceF9";
 
   if (!apiKey)     { console.error("[Keeper] Missing TRAFIKVERKET_API_KEY — add this secret in GitHub repo Settings → Secrets → Actions"); process.exit(0); }
   if (!privateKey) { console.error("[Keeper] Missing KEEPER_PRIVATE_KEY — add this secret in GitHub repo Settings → Secrets → Actions"); process.exit(0); }
 
-  const provider = new ethers.JsonRpcProvider(rpcUrl);
-  const wallet   = new ethers.Wallet(privateKey, provider);
-  const contract = new ethers.Contract(contractAddress, ABI, wallet);
+  let wallet, contract, count;
+  try { ({ wallet, contract, count } = await connectToChain(privateKey, contractAddress)); }
+  catch (err) { console.error("[Keeper] " + err.message); process.exit(0); }
 
   console.log(`[Keeper] Wallet: ${wallet.address}`);
-  const now   = Math.floor(Date.now() / 1000);
+  const now = Math.floor(Date.now() / 1000);
 
   // — Load existing markets (last 200 to avoid RPC overload) —
-  let count;
-  try { count = Number(await contract.marketCount()); }
-  catch (err) { console.error("[Keeper] Failed to read marketCount:", err.message); process.exit(0); }
+  // count already comes from the RPC probe — no second marketCount() call needed.
   const scanStart = Math.max(1, count - 199);
   const mkts  = (await Promise.allSettled(
     Array.from({ length: count - scanStart + 1 }, (_, i) => contract.getMarket(scanStart + i))
