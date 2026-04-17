@@ -2,9 +2,18 @@
   command   = "npm install"
   functions = "netlify/functions"
   publish   = "public"
-  # Only rebuild when files that Netlify actually serves change.
-  # Skips rebuilds for commits that only touch scripts/, .github/, CLAUDE.md, etc.
-  ignore    = "git diff --quiet HEAD~1 HEAD -- public/ netlify/"
+  # Only rebuild when files that Netlify actually serves or bundles change.
+  # Compares the last successfully-deployed commit ($CACHED_COMMIT_REF) against
+  # the current one ($COMMIT_REF) so that multi-commit pushes don't accidentally
+  # skip a frontend change hidden behind a later docs-only commit.
+  # Covered paths (rebuild needed):
+  #   public/       — static site
+  #   netlify/      — serverless functions
+  #   netlify.toml  — build config itself
+  #   package.json  — function dependency pins
+  # Everything else (scripts/, .github/, CLAUDE.md, TASKS.md, .gitignore, …)
+  # goes to GitHub only and does NOT burn Netlify build minutes.
+  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- public/ netlify/ netlify.toml package.json"
 
 [build.environment]
   NODE_VERSION = "20"
