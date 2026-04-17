@@ -208,7 +208,13 @@ Push to `main` branch → Netlify auto-deploys.
 
 - Static site from `public/`
 - Functions bundled with esbuild from `netlify/functions/`
-- Build is skipped when a commit only touches files outside `public/` and `netlify/` (see `netlify.toml` `ignore` rule) — e.g. changes to `scripts/`, `.github/`, `CLAUDE.md`, or `TASKS.md` do not trigger a rebuild.
+- **Netlify-build watch-list** (anything else is GitHub-only and does NOT burn Netlify minutes):
+  - `public/`        – static site
+  - `netlify/`       – serverless functions
+  - `netlify.toml`   – build config itself
+  - `package.json`   – function dependency pins
+- The `ignore` rule in `netlify.toml` compares `$CACHED_COMMIT_REF` (last successfully-deployed commit) against `$COMMIT_REF` (the incoming commit), so multi-commit pushes don't accidentally skip a frontend change buried behind a later docs-only commit.
+- Changes to `scripts/`, `.github/`, `CLAUDE.md`, `TASKS.md`, `.gitignore`, etc. therefore go to GitHub only — the GitHub Actions keeper picks up `scripts/` changes on its next 5-min run, and nothing else is affected.
 
 ### Oracle / Keeper
 
