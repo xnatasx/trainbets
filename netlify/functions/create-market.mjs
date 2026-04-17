@@ -50,6 +50,49 @@ async function getWalletAndContract(privateKey, contractAddress) {
   throw new Error("All RPC endpoints unavailable — please retry in a moment");
 }
 
+// Scan recent markets for {trainId, departureDate} across every RPC in the fallback list.
+// The active contract's provider may start throttling eth_call after the initial probe +
+// 200 getMarket calls; retrying on a fresh RPC keeps the lookup reliable without surfacing
+// raw CALL_EXCEPTION / "missing revert data" errors to the user.
+async function findMarketAcrossRpcs(contractAddress, trainId, departureDate, scanSize = 200) {
+  for (const url of RPC_URLS) {
+    try {
+      const provider = new ethers.JsonRpcProvider(url);
+      const readOnly = new ethers.Contract(contractAddress, CONTRACT_ABI, provider);
+      const cnt      = Number(await probeRpc(readOnly));
+      const start    = Math.max(1, cnt - scanSize + 1);
+      const results  = await Promise.allSettled(
+        Array.from({ length: cnt - start + 1 }, (_, i) => readOnly.getMarket(start + i))
+      );
+      for (let i = 0; i < results.length; i++) {
+        if (results[i].status === "fulfilled") {
+          const m = results[i].value;
+          if (m.trainId === trainId && m.departureDate === departureDate) return start + i;
+        }
+      }
+      return null; // scan completed, nothing matched
+    } catch (e) {
+      console.warn(`[create-market] findMarket RPC ${url} failed: ${e.message}`);
+    }
+  }
+  throw new Error("All RPC endpoints unavailable — please retry in a moment");
+}
+
+// Ethers surfaces throttled/empty eth_call responses as CALL_EXCEPTION with null revert data.
+// The raw message ("missing revert data ... code=CALL_EXCEPTION") is meaningless to end users,
+// so translate those (and common network/timeout errors) into a single friendly sentence.
+function friendlyError(err) {
+  const msg  = err?.message ?? "";
+  const code = err?.code;
+  if (code === "CALL_EXCEPTION" && (err?.data == null || err?.data === "0x")) {
+    return "RPC temporarily unavailable — please retry in a moment";
+  }
+  if (code === "NETWORK_ERROR" || code === "TIMEOUT" || /timeout|fetch failed|ECONN/i.test(msg)) {
+    return "RPC temporarily unavailable — please retry in a moment";
+  }
+  return msg || "Unknown error";
+}
+
 export async function handler(event) {
   if (event.httpMethod === "OPTIONS") return { statusCode: 200, headers: CORS, body: "" };
   if (event.httpMethod !== "POST")    return { statusCode: 405, headers: CORS, body: "Method Not Allowed" };
@@ -95,22 +138,6 @@ export async function handler(event) {
       }
     }
 
-    // Helper: scan last N markets looking for this trainId+date
-    async function findMarket(scanSize = 200) {
-      const cnt   = Number(await contract.marketCount());
-      const start = Math.max(1, cnt - scanSize + 1);
-      const results = await Promise.allSettled(
-        Array.from({ length: cnt - start + 1 }, (_, i) => contract.getMarket(start + i))
-      );
-      for (let i = 0; i < results.length; i++) {
-        if (results[i].status === "fulfilled") {
-          const m = results[i].value;
-          if (m.trainId === trainId && m.departureDate === departureDate) return start + i;
-        }
-      }
-      return null;
-    }
-
     // Predict the new marketId via staticCall (no gas, instant).
     // Only catch CALL_EXCEPTION (contract revert) here — network errors are re-thrown
     // so the outer handler returns the real error rather than a misleading "closing time" message.
@@ -124,7 +151,7 @@ export async function handler(event) {
 
       // Contract rejected — oracle may have just created this market; scan for it
       console.log(`[create-market] staticCall CALL_EXCEPTION (reason: ${scErr.reason ?? scErr.message}) — scanning for existing market...`);
-      const mid = await findMarket();
+      const mid = await findMarketAcrossRpcs(contractAddress, trainId, departureDate);
       if (mid !== null) {
         console.log(`[create-market] found after staticCall fail: marketId=${mid}`);
         return { statusCode: 200, headers: CORS, body: JSON.stringify({ marketId: mid }) };
@@ -148,7 +175,7 @@ export async function handler(event) {
       console.log(`[create-market] race condition (${txErr.code}) — polling for market...`);
       for (let attempt = 0; attempt < 5; attempt++) {
         await new Promise(r => setTimeout(r, 2000));
-        const mid = await findMarket();
+        const mid = await findMarketAcrossRpcs(contractAddress, trainId, departureDate);
         if (mid !== null) {
           console.log(`[create-market] found after ${(attempt + 1) * 2}s: marketId=${mid}`);
           return { statusCode: 200, headers: CORS, body: JSON.stringify({ marketId: mid }) };
@@ -161,7 +188,7 @@ export async function handler(event) {
     return { statusCode: 200, headers: CORS, body: JSON.stringify({ marketId: expectedId }) };
 
   } catch (err) {
-    console.error("[create-market]", err.message);
-    return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: err.message }) };
+    console.error("[create-market]", err.message, err.code ?? "");
+    return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: friendlyError(err) }) };
   }
 }
