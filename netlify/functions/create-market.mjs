@@ -159,32 +159,55 @@ export async function handler(event) {
       throw new Error("Contract rejected market creation (closing time may have passed for this train)");
     }
 
-    // Submit the real transaction — await submission but NOT mining (Base mines in ~2s)
+    // Submit the real transaction — await submission but NOT mining (Base mines in ~2s).
+    // If submission fails with a nonce race (oracle cron uses the same treasury wallet),
+    // bump gas and retry once; then fall back to a longer race-poll window.
     console.log(`[create-market] submitting: ${trainId} ${departureDate} closingTime=${closingTime} → expected marketId=${expectedId}`);
+    let txResponse = null;
     try {
-      await contract.createMarket(trainId, departureDate, Number(closingTime), BASE_GAS);
+      txResponse = await contract.createMarket(trainId, departureDate, Number(closingTime), BASE_GAS);
     } catch (txErr) {
-      const isRace = txErr.code === "REPLACEMENT_UNDERPRICED"
-        || txErr.code === "CALL_EXCEPTION"
-        || txErr.message?.includes("replacement")
-        || txErr.message?.includes("underpriced")
-        || txErr.message?.includes("revert");
-      if (!isRace) throw txErr;
+      console.error(`[create-market] tx submit failed: code=${txErr.code ?? "n/a"} reason=${txErr.reason ?? "n/a"} short=${txErr.shortMessage ?? "n/a"} message=${txErr.message}`);
 
-      // Race with oracle: poll every 2s for up to 10s for the market to appear
-      console.log(`[create-market] race condition (${txErr.code}) — polling for market...`);
-      for (let attempt = 0; attempt < 5; attempt++) {
-        await new Promise(r => setTimeout(r, 2000));
-        const mid = await findMarketAcrossRpcs(contractAddress, trainId, departureDate);
-        if (mid !== null) {
-          console.log(`[create-market] found after ${(attempt + 1) * 2}s: marketId=${mid}`);
-          return { statusCode: 200, headers: CORS, body: JSON.stringify({ marketId: mid }) };
+      // Nonce race with oracle cron / keeper → bump gas 25% and retry submission once.
+      const isNonceRace = txErr.code === "REPLACEMENT_UNDERPRICED"
+        || txErr.code === "NONCE_EXPIRED"
+        || /replacement|underpriced|nonce/i.test(txErr.message ?? "");
+      if (isNonceRace) {
+        try {
+          const bumped = {
+            maxFeePerGas:         (BASE_GAS.maxFeePerGas         * 125n) / 100n,
+            maxPriorityFeePerGas: (BASE_GAS.maxPriorityFeePerGas * 125n) / 100n,
+          };
+          txResponse = await contract.createMarket(trainId, departureDate, Number(closingTime), bumped);
+          console.log(`[create-market] submit retry OK with bumped gas: ${txResponse.hash}`);
+        } catch (retryErr) {
+          console.warn(`[create-market] submit retry failed: ${retryErr.code ?? ""} ${retryErr.message}`);
         }
       }
-      throw new Error("Market creation is taking longer than expected — please retry in a moment");
+
+      // Still no tx? Another backend writer (oracle / keeper) may already be landing the
+      // same market; poll longer (30s, since oracle uses await tx.wait() and Base mines in ~2s
+      // but tx propagation + our allSettled scan can burn a couple of seconds).
+      if (!txResponse) {
+        const raceCode = txErr.code ?? "unknown";
+        const isRevert = txErr.code === "CALL_EXCEPTION" || /revert/i.test(txErr.message ?? "");
+        if (!isNonceRace && !isRevert) throw txErr; // network/other → bubble up
+
+        console.log(`[create-market] race condition (${raceCode}) — polling up to 30s for market...`);
+        for (let attempt = 0; attempt < 15; attempt++) {
+          await new Promise(r => setTimeout(r, 2000));
+          const mid = await findMarketAcrossRpcs(contractAddress, trainId, departureDate);
+          if (mid !== null) {
+            console.log(`[create-market] found after ${(attempt + 1) * 2}s: marketId=${mid}`);
+            return { statusCode: 200, headers: CORS, body: JSON.stringify({ marketId: mid }) };
+          }
+        }
+        throw new Error("Market creation is taking longer than expected — please retry in a moment");
+      }
     }
 
-    console.log(`[create-market] submitted marketId=${expectedId}`);
+    console.log(`[create-market] submitted tx=${txResponse.hash} marketId=${expectedId}`);
     return { statusCode: 200, headers: CORS, body: JSON.stringify({ marketId: expectedId }) };
 
   } catch (err) {
