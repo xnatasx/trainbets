@@ -1,9 +1,11 @@
 name: TrainBets Keeper
 
 on:
-  schedule:
-    - cron: "*/5 * * * *"   # every 5 minutes (GitHub Actions minimum)
-  workflow_dispatch:          # allow manual trigger
+  # The 5-minute schedule is disabled while the site is paused — re-enable
+  # by uncommenting the cron line below.
+  # schedule:
+  #   - cron: "*/5 * * * *"   # every 5 minutes (GitHub Actions minimum)
+  workflow_dispatch:          # manual trigger only (Actions tab → Run workflow)
 
 # Prevent two keeper runs from overlapping — queue the next one, don't cancel
 concurrency:
@@ -18,10 +20,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Node 20 matches the Netlify build (netlify.toml NODE_VERSION).
+      # No `cache: "npm"` because package-lock.json is gitignored — enabling the
+      # cache makes setup-node fail looking for the lockfile (the cause of the
+      # red runs you saw in the Actions tab).
       - uses: actions/setup-node@v4
         with:
-          node-version: "24"
-          cache: "npm"
+          node-version: "20"
 
       - name: Install dependencies
         run: npm install --no-package-lock
